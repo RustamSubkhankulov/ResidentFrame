@@ -81,18 +81,54 @@ locals RT
 ; GetFrameType
 ;
 ; Entry: none   
-; Exit : AL - frame type
+; Exit : DL - frame type
 ; Destr: AX
 ;------------------------------------------------
 
 GetFrmType  proc
 
             mov bx, CMND_LN + 1
-            mov al, [bx]
-            sub al, '0'
+            mov dl, [bx]
+            sub dl, '0'
 
+            cmp dl, 3
+            jne RTret
+
+            call GetUserFrame
+
+        RTret:
             ret 
             endp
+
+;------------------------------------------------
+; 
+; GetUserFrame
+;
+; Entry:
+; Exit:
+; Destr:
+;------------------------------------------------
+
+GetUserFrame    proc
+
+                xor ah, ah
+
+                mov si, CMND_LN + 3
+                lea bx, UserFrame
+
+                mov cx, 9
+
+            RTloop:
+                mov al, [si]
+                inc si
+
+                mov [bx], al
+                inc bx
+
+                loop RTloop
+
+                ret
+                endp
 
 ;------------------------------------------------
 ; DrawLine
@@ -154,6 +190,7 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 
 DrawFrame   proc 
     ;First line of frame
+            mov al, dl
             mov ah, 9
             mul ah
             xor ah, ah
@@ -255,6 +292,8 @@ DOUBLE_LST  db DFR_LB , DFR_HOR, DFR_RB
 
 ;----------------USER-STYLE-FRAME----------------
 ; TYPE 3
+
+UserFrame:
 
 USER_FST    db 3 dup(?)
 USER_MDL    db 3 dup(?)
