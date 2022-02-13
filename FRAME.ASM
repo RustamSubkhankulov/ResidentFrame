@@ -6,23 +6,10 @@ org 100h
 
 .PAUSE		macro           ; getchar();
 		    nop
-
 		    xor ah, ah
 		    int 16h
-
 		    nop
 		    endm
-
-.CMPR       macro
-            nop
-            
-            cmp dl, al
-            jne RTinputErr
-            inc si
-            jmp RTret
-
-            nop
-            endm
     
 ;=================CONSTANTS======================
 
@@ -32,7 +19,7 @@ CMND_LN     equ 081h        ; start of the command
 ;----------------VIDEO-MEMORY--------------------
 
 VIDEOSEG    equ 0B800h      ; address of video memory segment
-FRAME_LEN   = 80            ; lenght of the video frame
+FRAME_LEN   = 80           ; lenght of the video frame
 FRAME_WID   = 25            ; width  of the video frame
 
 CENTER_LINE = FRAME_WID / 2 ; center line   of the video frame
@@ -48,29 +35,11 @@ STOP		equ 04Ch    	; interrupt code for terminating
 
 ;--------------FRAME-PARAMETERS------------------
 
-WID	    	= 10d		    ; width  of the frame
-LEN		    = 40d		    ; lenght of the frame
+WID	    	= 3d		    ; width  of the frame
+LEN		    = 5d		    ; lenght of the frame
 COLOR_ATTR  = 4Eh           ; color attribute for the frame
  
 ;===============ASCII-SYMBOL-CODES===============
-
-;-----------------DOUBLE-FRAME-------------------
-
-DFR_RT		= 187d  	    ; right top symbol    
-DFR_RB		= 188d		    ; right bottom symbol 
-DFR_LT		= 201d		    ; left top symbol     
-DFR_LB		= 200d		    ; left bottom symbol  
-DFR_VER		= 186d		    ; vertical symbol     
-DFR_HOR		= 205d		    ; horizontal symbol   
-
-;-----------------SINGLE-FRAME-------------------
-
-SFR_RT		= 191d  	    ; right top symbol    
-SFR_RB		= 217d		    ; right bottom symbol 
-SFR_LT		= 218d		    ; left top symbol     
-SFR_LB		= 192d		    ; left bottom symbol  
-SFR_VER		= 179d		    ; vertical symbol     
-SFR_HOR		= 196d		    ; horizontal symbol   
 
 SPACE	 	= 020h		    ; srace symbol
 NWLINE		= 0Ah		    ; \n
@@ -107,9 +76,6 @@ locals RT
 
 WriteText       proc
 
-                mov cx, VIDEOSEG
-                mov es, cx
-
                 mov al, dh
                 cbw
                 mov cx, ax
@@ -122,16 +88,15 @@ WriteText       proc
                 xor bl, bl
                 xchg bl, bh
                 
-                add bx, (CENTER_LINE - 1) * FRAME_LEN
+                add bx, CENTER_LINE  * FRAME_LEN
                 shl bx, 1
+                mov di, bx
+
+                mov ah, COLOR_ATTR
 
             RTloop:
-                mov al, [si]
-                inc si
-
-                mov es:[bx], al
-                add bx, 2
-
+                lodsb
+                stosw
                 loop RTloop
 
                 ret
@@ -180,8 +145,7 @@ GetFrameText    proc
                 mov cx, LEN - 2
 
             RTloop:
-                mov al, [si]
-                inc si
+                lodsb
                 cmp al, '$'
                 je RTisSpace
 
@@ -192,12 +156,20 @@ GetFrameText    proc
                 loop RTloop
 
             RTis$:
-                mov dl, ' '
-                .CMPR
+                lodsb
+                mov dl, '$'
+                inc si
+                jmp RTcompare
 
             RTisSpace:
-                mov dl, '$'
-                .CMPR
+                lodsb
+                mov dl, ' '
+                jmp RTcompare
+
+            RTcompare:
+                cmp dl, al
+                jne RTinputErr
+                jmp RTret
 
             RTinputErr:
                 mov ah, 09h
@@ -251,8 +223,7 @@ GetUserFrame    proc
                 mov cx, 9
 
             RTloop:
-                mov al, [si]
-                inc si
+                lodsb                     
 
                 mov [bx], al
                 inc bx
@@ -275,28 +246,16 @@ GetUserFrame    proc
 
 DrawLine    proc
 
-            mov al, [si]
-            inc si
+            lodsb
+            stosw
 
-            mov es:[di], ax
-            add di, 2
-
-            mov al, [si]
-            inc si
-
+            lodsb
             sub cx, 2
             jbe RTstopDrwLn 
+            rep stosw
 
-        RTnextSymb:
-            mov es:[di], ax
-            add di, 2
-            loop RTnextSymb
-
-            mov al, [si]
-            inc si          ;isn't needed
-
-            mov es:[di], ax
-            add di, 2       ;also isn't needed  
+            lodsb
+            stosw 
 
             jmp RTret
 
@@ -309,12 +268,6 @@ DrawLine    proc
         RTret:
             ret
             endp    
-
-        RTstopDrwLn:
-            mov ah, 09h
-            mov dx, offset DrwLnErrMsg
-            int 21h
-            jmp Terminate
 
 DrwLnErrMsg     db 'Incorrect lenght of the frame$' 
 
@@ -336,12 +289,8 @@ DrawFrame   proc
             mov bx, ax
 
             lea si, FRAMES[bx]
-
-            ;xor di, di
-            ;
             mov di, (START_LINE * FRAME_LEN + START_COLM) * 2
-            ;
-
+            
             mov ah, COLOR_ATTR
             mov cx, LEN
 
@@ -349,6 +298,7 @@ DrawFrame   proc
             mov es, bx
 
             call DrawLine
+
     ; Middle lines of frame
             mov bx, WID - 1
             cmp bx, 0
@@ -358,17 +308,12 @@ DrawFrame   proc
             mov cx, LEN
 
             mov al, bl
-            ;
-            add al, START_LINE
-            ;
-            dec al
+            add al, START_LINE - 1
             mov ah, FRAME_LEN * 2
             mul ah
-            ;
             add ax, START_COLM * 2
-            ;
-
             mov di, ax
+
             mov ah, COLOR_ATTR
 
             call DrawLine
@@ -385,11 +330,9 @@ DrawFrame   proc
     ; Last line of frame
 
             mov cx, LEN
-            ;mov di, (WID - 1) * FRAME_LEN * 2
             mov di, (START_LINE + WID - 1) * FRAME_LEN * 2 + START_COLM * 2
 
             call DrawLine
-            
             jmp RTret
 
         RTstop:
@@ -418,16 +361,16 @@ SIGN_LST    db '+', '-', '+'
 ;------------------SINGLE-FRAME------------------
 ; TYPE 1
 
-SINGLE_FST  db SFR_LT , SFR_HOR, SFR_RT
-SINGLE_MDL  db SFR_VER, SPACE  , SFR_VER
-SINGLE_LSR  db SFR_LB , SFR_HOR, SFR_RB
+SINGLE_FST  db 218d, 196d , 191d
+SINGLE_MDL  db 179d, SPACE, 179d
+SINGLE_LSR  db 192d, 196d , 217d
 
 ;------------------DOUBLE-FRAME------------------
 ; TYPE 2
 
-DOUBLE_FST  db DFR_LT , DFR_HOR, DFR_RT
-DOUBLE_MDL  db DFR_VER, SPACE  , DFR_VER
-DOUBLE_LST  db DFR_LB , DFR_HOR, DFR_RB
+DOUBLE_FST  db 201d, 205d , 187d
+DOUBLE_MDL  db 186d, SPACE, 186d
+DOUBLE_LST  db 200d, 205d , 188d
 
 ;----------------USER-STYLE-FRAME----------------
 ; TYPE 3
