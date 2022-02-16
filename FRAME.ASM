@@ -2,6 +2,40 @@
 .code 
 org 100h
 
+;===================USING========================
+;
+; If you want to print text in the frame,
+; write text after 'frame.com' in command line
+; quarded by '$' on the both sides.
+; Maximum lenght of the text = LEN - 2
+;
+; If you don't want to print text, just write down
+; type of the frame - 0, 1, 2 or 3 after space
+;
+; Frame types:
+;       0 - frame made of '+' and '-'
+;       1 - single-lined frame
+;       2 - double-lined frame
+;       3 - user's style of the frame
+
+; Note: after 3 must be written 9 symbols,
+;       that will be used as left-top corner, 
+;       horizontal symbol in first line,
+;       right-top corner, vertical symbol on the 
+;       left side, background symbol, vertical
+;       symbol on the right symbol, left-bottom
+;       corner, horizontal symbol on the last line
+;       and rigth-bottom corner
+;
+;       Symbols of user's style frame must be printed 
+;       without spaces between
+;
+; Constant frame parameters:
+;       COLOR_ATTR - color attribute for frame
+;       WID - width  of the frame
+;       LEN - lenght of the frame
+;       FRAME_LEN and FRAME_WID - video frame
+;                                 parameters
 ;===================MACRO========================
 
 .PAUSE		macro           ; getchar();
@@ -35,15 +69,17 @@ STOP		equ 04Ch    	; interrupt code for terminating
 
 ;--------------FRAME-PARAMETERS------------------
 
-WID	    	= 3d		    ; width  of the frame
-LEN		    = 5d		    ; lenght of the frame
+WID	    	= 11d		    ; width  of the frame
+LEN		    = 40d		    ; lenght of the frame
 COLOR_ATTR  = 4Eh           ; color attribute for the frame
+                            ;
+                            ; this default color attribute
+                            ; prints yellow symbols on the right
+                            ; background 
  
 ;===============ASCII-SYMBOL-CODES===============
 
 SPACE	 	= 020h		    ; srace symbol
-NWLINE		= 0Ah		    ; \n
-GACHI		= 0Bh		    ; GACHI SYMBOL for 300$ bucks
 
 ;===================MAIN=BODY====================
 
@@ -69,9 +105,9 @@ locals RT
 ;
 ; WriteText
 ;
-; Entry: DH - number of symbols are to be printed
+; Entry: DH - number of symbols to be printed
 ; Exit : None
-; Destr:
+; Destr: AX, BX, CX, SI, DI
 ;------------------------------------------------
 
 WriteText       proc
@@ -134,9 +170,9 @@ GetTypeAndText  proc
 ;
 ; GetFrameText
 ;
-; Entry: BX - address of the first symbol after '$' int frame text
-; Exit:
-; Destr: AX, BX, CX, SI
+; Entry: SI - address of the first symbol of text in cmnd line
+; Exit : DH - number of symbols read 
+; Destr: AX, BX, CX, DX
 ;------------------------------------------------
 
 GetFrameText    proc
@@ -188,7 +224,7 @@ InputErrMsg db 'Incorrect format of the input$'
 ;
 ; Entry: SI - address of the frame type symbol in cmnd line
 ; Exit : DL - frame type
-; Destr: AX, BX, SI, DL
+; Destr: AL, BX, SI, DL
 ;------------------------------------------------
 
 GetFrameType    proc
@@ -212,19 +248,16 @@ GetFrameType    proc
 ;
 ; Entry: SI points to the first symbol of user frame symbols
 ; Exit : None
-; Destr: AX, BX, SI
+; Destr: AL, BX, SI
 ;------------------------------------------------
 
 GetUserFrame    proc
 
-                xor ah, ah
                 lea bx, UserFrame
-
                 mov cx, 9
 
             RTloop:
                 lodsb                     
-
                 mov [bx], al
                 inc bx
 
@@ -251,8 +284,8 @@ DrawLine    proc
 
             lodsb
             sub cx, 2
-            jbe RTstopDrwLn 
-            rep stosw
+            jbe RTstopDrwLn     ; Incorrect lenght
+            rep stosw           ; of the frame
 
             lodsb
             stosw 
@@ -281,9 +314,9 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 ;------------------------------------------------
 
 DrawFrame   proc 
-    ;First line of frame
-            mov al, dl
-            mov ah, 9
+
+            mov al, dl          ; first line of
+            mov ah, 9           ; the frame
             mul ah
             xor ah, ah
             mov bx, ax
@@ -299,9 +332,8 @@ DrawFrame   proc
 
             call DrawLine
 
-    ; Middle lines of frame
-            mov bx, WID - 1
-            cmp bx, 0
+            mov bx, WID - 1     ; middle lines of
+            cmp bx, 0           ; the frame
             JBE RTstop
 
         RTmiddleLines:
@@ -327,9 +359,8 @@ DrawFrame   proc
 
         RToutLoop:
 
-    ; Last line of frame
-
-            mov cx, LEN
+            mov cx, LEN         ; last line of 
+                                ; the frame
             mov di, (START_LINE + WID - 1) * FRAME_LEN * 2 + START_COLM * 2
 
             call DrawLine
