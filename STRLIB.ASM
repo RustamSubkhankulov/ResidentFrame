@@ -33,14 +33,11 @@ org 100h
 Start:      push ds
             pop es 
 
-            lea si, NUMSTR
-            call ratoi
-
             lea si, FSTSTR
-            lea di, SNDSTR
-            mov cx, 5
+            lea di, number
+            mov cx, 3
 
-            call rstrncmp
+            call rstrncpy
 
             Terminate:
             mov ah, STOP
@@ -49,15 +46,14 @@ Start:      push ds
 NUMSTR db '1234', 0, '567'
 FSTSTR db 'hello', 0
 SNDSTR db 'hello world', 0
-
-;=============REGISTER=ARG=RECEIVING=============
+NUMBER db 10 dup (1)
 
 ;-------------------RSTRLEN-----------------------
 ; 
 ; Description: Returns the length of the given 
 ; byte string, that is, the number of characters 
 ; in a character array whose first element is 
-; pointed to by ___ up to and not including the 
+; pointed to by ES:DI up to and not including the 
 ; first null character. The behavior is undefined 
 ; if there is no null character in the character 
 ; array pointed to by str.
@@ -90,6 +86,41 @@ rstrlen  proc
 
 rstrlen  endp
 
+;-------------------SSTRLEN-----------------------
+; 
+; Description: Returns the length of the given 
+; byte string, that is, the number of characters 
+; in a character array whose first element is 
+; pointed to by ES:DI up to and not including the 
+; first null character. The behavior is undefined 
+; if there is no null character in the character 
+; array pointed to by str.
+;
+; Entry: 
+; Exit : AX - lenght of the string
+; Destr: CX, DI
+; Note : Sets DF to zero
+;------------------------------------------------
+
+sstrlen  proc
+
+        cld
+        xor al, al
+        xor cx, cx
+
+    rstrlenLoop:
+        scasb
+        je rstrlenFin
+
+        inc cx
+        jmp rstrlenLoop
+
+    rstrlenFin:
+        xchg ax, cx
+        ret 
+
+sstrlen  endp
+
 ;------------------RSTRCHR-----------------------
 ; 
 ; Description: Finds the first occurrence of ch 
@@ -97,7 +128,7 @@ rstrlen  endp
 ; by str. The terminating null character is 
 ; considered to be a part of the string and can
 ; be found when searching for '\0'.
-; The behavior is undefined if str is not a 
+; The behavior is undefined if ES:DI is not a 
 ; pointer to a null-terminated byte string.
 ;
 ; Entry: DI - address of the first symbol of
@@ -137,9 +168,9 @@ rstrchr endp
 ;------------------RSTRNCPY----------------------
 ; 
 ; Description: Copies the character string 
-; pointed to by src, including the null 
+; pointed to by DS:SI, including the null 
 ; terminator, to the character array whose 
-; first element is pointed to by dest.
+; first element is pointed to by ES:DI.
 ; The behavior is undefined if the dest array 
 ; is not large enough. The behavior is undefined
 ; if the strings overlap.
@@ -165,10 +196,11 @@ rstrncpy proc
 
     rstrncpyLoop:
         cmp byte ptr ds:[si], 0
-        je rstrncpyRet
-
         movsb
+        je rstrncpyRet
         loop rstrncpyLoop 
+
+        mov byte ptr es:[di], 0
 
     rstrncpyRet:
         pop di
@@ -188,7 +220,7 @@ rstrncpy endp
 ; of characters that differ in the arrays being
 ; compared.
 ; The behavior is undefined when access occurs 
-; past the end of either array lhs or rhs. 
+; past the end of either array DS:SI or ES:DI. 
 ; The behavior is undefined when either lhs 
 ; or rhs is the null pointer.
 ;
@@ -245,7 +277,7 @@ rstrncmp    endp
 ; them to an integer value. The valid integer 
 ; value consists of the following parts:
 ; 1. numeric digits
-; 2. plus or minus sign
+; 2. plus or minus sign (feature will be added soon)
 ;
 ; Entry: DS - points to segment, where string is 
 ;             stored
@@ -298,14 +330,57 @@ ratoi   endp
 ; 
 ; Description: 
 ;
-; Entry:
-; Exit :
-; Destr:
+; Entry: DS - points to the segment, where string
+;             will be stored
+;        SI - points tot the start of memory 
+;             where string will be stored
+;        CL - base of the numeral system
+;
+;        Note: CL can be value only from 2 to 10
+;        BX - number
+; Exit : SI - points to the first symbol in 
+;             string
+; Destr: AX, CX
 ;------------------------------------------------
 
-;ritoa proc
+ritoa   proc
 
-;ritoa endp
+        mov ch, 1
+        mov ax, bx
+
+    ritoaCountLoop:
+        div cl
+
+        cmp al, 0
+        je ritoaStopCount
+
+        inc ch
+        cbw
+        jmp ritoaCountLoop
+
+    ritoaStopCount:
+        mov al, ch
+        cbw
+        add si, ax
+        dec si 
+
+        mov ax, bx
+
+    ritoaLoop:
+        div cl
+        add ah, '0'
+        mov ds:[si], ah
+
+        cmp al, 0
+        je ritoaRet
+        cbw
+        dec si
+        jmp ritoaLoop
+
+    ritoaRet:
+        ret
+
+ritoa   endp
 
 ;================================================
 
