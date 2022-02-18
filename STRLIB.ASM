@@ -40,15 +40,15 @@ org 100h
 ;================================================
 
 Start:      push ds
-            lea ax, NUMBER
+            lea  ax, number
             push ax
-            mov al, 10d
-            xor ah,ah
+            mov  ax, 7D6Ah
             push ax
-            mov ax, 1234
-            push ax
+            mov  ax, 16
+            push ax 
+            
+            call snumtoa
 
-            call sitoa
             add sp, 8
 
             Terminate:
@@ -86,7 +86,7 @@ rstrlen  proc
         xor cx, cx              ; reset counter
 
     rstrlenLoop:                ; main cycle
-        scasb                   ; cmp and iterate
+        scasb                   ; cmp al, es:[di]; di++; 
         je rstrlenFin           ; stop if zero find
 
         inc cx                  ; increment counter
@@ -172,7 +172,7 @@ rstrchr proc
         cmp byte ptr es:[di], 0 ; is *string = 0
         je rstrchrNotFound      ; stop if *string zero
 
-        scasb                   ; cmp and iterate
+        scasb                   ; cmp al, es:[di]; di++;
         je rstrchrFound         ; symbol found
         jmp rstrchrLoop
 
@@ -205,7 +205,7 @@ rstrchr endp
 ;        third arg  - symbol to be found
 ; Exit : DI - address of the founded symbol
 ;             or '0' if there is no in string
-; Destr: ES, DI, AX
+; Destr: ES, AX
 ;------------------------------------------------
 
 sstrchr proc
@@ -271,9 +271,9 @@ rstrncpy proc
 
     rstrncpyLoop:
         cmp byte ptr ds:[si], 0 ; is *string = 0
-        movsb                   ; move symb
+        movsb                   ; ds:[si]->es:[di]; si++; di++;
         je rstrncpyRet          ; stop if *string = 0
-        loop rstrncpyLoop 
+        loop rstrncpyLoop       ; cx--;
 
         mov byte ptr es:[di], 0 ; set terminating 0
 
@@ -300,13 +300,13 @@ rstrncpy endp
 ;                 the string
 ;        third  - points to the segment, where the
 ;                 destination string is stored
-;        fourth - addres of the first symbol of
+;        fourth - address of the first symbol of
 ;                 destination string
 ;        fifth  - max number of bytes to be copied
 ;
 ; Exit : DI - points to the first symbol of
 ;             destination string
-; Destr: CX, DS, SI, ES, DI
+; Destr: CX, DS, SI, ES
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
@@ -355,9 +355,9 @@ sstrncpy endp
 ; or rhs is the null pointer.
 ;
 ; Entry: DS - points to the segment, where the 
-;        first string is stored
+;             first string is stored
 ;        ES - points to the segment, where the
-;        second string is stored
+;             second string is stored
 ;        SI - address of the first symbol of
 ;             first string
 ;        DI - address of the first symbol of
@@ -590,128 +590,111 @@ satoi   proc
 
 satoi   endp
 
-;--------------------RITOA-----------------------
-; 
-; Description: 
+;--------------------RNUMTOA------------------------
 ;
-; Entry: DS - points to the segment, where string
-;             will be stored
-;        SI - points tot the start of memory 
-;             where string will be stored
-;        CL - base of the numeral syste
-;        Note: CL can be value only from 2 to 10
-;
-;        BX - number
-;
-; Exit : SI - points to the first symbol in 
-;             string
-; Destr: AX, CX
+; Description: Translates number into string
+; Entry:       DS - points to the segment, where
+;                   string will be stored
+;              SI - points to the address of the
+;                   first symbol in string
+;              BX - number to be translated
+;              CX - base of the numeric system 
+; Exit:        SI remains it value
+; Destr:       BX, AX, DX
 ;------------------------------------------------
 
-ritoa   proc
+rnumtoa     proc
 
-        mov ch, 1               ; lenght at least is 1
-        mov ax, bx              
+            mov ax, bx          
 
-    ritoaCountLoop:             ; counting number of digits 
-        div cl                  ; in number to get offset
-                                
-        cmp al, 0
-        je ritoaStopCount
+        rnumtoaCount:           ; counting offset
+            xor dx, dx
+            div cx
+            cmp ax, 0
+            je rnumtoaMain
+            inc si              ; increments counter
+            jmp rnumtoaCount
 
-        inc ch
-        cbw
-        jmp ritoaCountLoop
+        rnumtoaMain:
+            mov ax, bx
+            lea di, RSYMB_TABLE ; address of the symbol table
+                                ; used to convert code to symbols
+        rnumtoaLoop:
+            xor dx, dx          ; for 'div' command
+            div cx
 
-    ritoaStopCount:
-        mov al, ch
-        cbw
-        add si, ax
-        dec si                  ; si points to the last symb
+            mov bx, dx          ; converting remainder to symbol
+            mov dl, [di + bx]   ; prints number from end
+            mov ds:[si], dl     
+            dec si              ; iterate to next symbol
 
-        mov ax, bx
+            cmp ax, 0
+            jne rnumtoaLoop
 
-    ritoaLoop:
-        div cl
-        add ah, '0'             ; converting symbol code
-        mov ds:[si], ah         ; store symbol in string
+            inc si              ; si points to the start of string
+            ret
 
-        cmp al, 0
-        je ritoaRet
-        cbw
-        dec si                  ; going from end to start of string
-        jmp ritoaLoop
+rnumtoa     endp
 
-    ritoaRet:
-        ret
+RSYMB_TABLE db '0123456789ABCDEF' 
 
-ritoa   endp
-
-;--------------------SITOA-----------------------
-; 
-; Description: 
+;--------------------SNUMTOA---------------------
 ;
-; Entry: first  - points to the segment, where 
-;                string will be stored
-;        second - points tot the start of memory 
-;                 where string will be stored
-;        third  - base of the numeral system
-;
-;        Note: CL can be value only from 2 to 10
-;        fourth - number to be converted
-;
-; Exit : SI - points to the first symbol in 
-;             string
-; Destr: AX, CX, DS
+; Description: Translates number into string
+; Entry:       first  - points to the segment, 
+;                       where string will be 
+;                       stored
+;              second - points to the address of 
+;                       the first symbol in string
+;              third  - number to be translated
+;              fourth - base of the numeric system 
+; Exit:        SI points to the start of the
+;              start of string
+;              (SI == second argument)
+; Destr:       DS, AX, BX
 ;------------------------------------------------
 
-sitoa   proc
+snumtoa     proc
 
-        push bp                 ; prologue
-        mov  bp, sp
+            push bp             ; prologue
+            mov  bp, sp
 
-        mov cx, [bp + 6 ]       ; getting args
-        mov si, [bp + 8 ]
-        mov ds, [bp + 10]
+            mov cx, [bp + 4 ]
+            mov ax, [bp + 6 ]
+            mov si, [bp + 8 ]
+            mov ds, [bp + 10]   
 
-        mov ch, 1
-        mov ax, [bp + 4]
+        snumtoaCount:           ; counting offset
+            xor dx, dx
+            div cx
+            cmp ax, 0
+            je snumtoaMain
+            inc si              ; increments counter
+            jmp snumtoaCount
 
-    sitoaCountLoop:
-        div cl
+        snumtoaMain:
+            mov ax, [bp + 6]
+            lea di, SSYMB_TABLE ; address of the symbol table
+                                ; used to convert code to symbols
+        snumtoaLoop:
+            xor dx, dx          ; for 'div' command
+            div cx
 
-        cmp al, 0
-        je sitoaStopCount
+            mov bx, dx          ; converting remainder to symbol
+            mov dl, [di + bx]   ; prints number from end
+            mov ds:[si], dl     
+            dec si              ; iterate to next symbol
 
-        inc ch
-        cbw
-        jmp sitoaCountLoop
+            cmp ax, 0
+            jne snumtoaLoop
 
-    sitoaStopCount:
-        mov al, ch
-        cbw
-        add si, ax
-        dec si 
+            inc si              ; si points to the start of string
+            pop bp              ; epilogue
+            ret
 
-        mov ax, [bp + 4]
+snumtoa     endp
 
-    sitoaLoop:
-        div cl
-        add ah, '0'
-        mov ds:[si], ah
-
-        cmp al, 0
-        je sitoaRet
-        cbw
-        dec si
-        jmp sitoaLoop
-
-    sitoaRet:
-        pop bp                  ; epilogue
-        ret
-
-sitoa   endp
-
+SSYMB_TABLE db '0123456789ABCDEF' 
 
 ;================================================
 
