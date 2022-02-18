@@ -40,15 +40,15 @@ org 100h
 ;================================================
 
 Start:      push ds
-            lea ax, SNDSTR
-            push ax
-            push ds
             lea ax, NUMBER
             push ax
-            mov ax, 20d
+            mov al, 10d
+            xor ah,ah
+            push ax
+            mov ax, 1234
             push ax
 
-            call sstrncpy 
+            call sitoa
             add sp, 8
 
             Terminate:
@@ -81,19 +81,19 @@ NUMBER db 20 dup (1)
 
 rstrlen  proc
 
-        cld
-        xor al, al
-        xor cx, cx
+        cld                     ; DF = 0
+        xor al, al              ; comparing reg
+        xor cx, cx              ; reset counter
 
-    rstrlenLoop:
-        scasb
-        je rstrlenFin
+    rstrlenLoop:                ; main cycle
+        scasb                   ; cmp and iterate
+        je rstrlenFin           ; stop if zero find
 
-        inc cx
+        inc cx                  ; increment counter
         jmp rstrlenLoop
 
     rstrlenFin:
-        xchg ax, cx
+        xchg ax, cx             ; return value through ax
         ret 
 
 rstrlen  endp
@@ -122,10 +122,10 @@ sstrlen proc
         push bp                 ;prologue
         mov  bp, sp
 
-        mov  di, [bp + 4]       
+        mov  di, [bp + 4]       ; getting args
         mov  es, [bp + 6]       
 
-        cld
+        cld                     
         xor al, al
         xor cx, cx
 
@@ -166,22 +166,22 @@ sstrlen endp
 
 rstrchr proc
 
-        cld
+        cld                     ; DF = 0
 
     rstrchrLoop:
-        cmp byte ptr es:[di], 0
-        je rstrchrNotFound
+        cmp byte ptr es:[di], 0 ; is *string = 0
+        je rstrchrNotFound      ; stop if *string zero
 
-        scasb 
-        je rstrchrFound
+        scasb                   ; cmp and iterate
+        je rstrchrFound         ; symbol found
         jmp rstrchrLoop
 
     rstrchrFound:
-        dec di
-        jmp rstrchrRet
+        dec di                  ; return to found symb
+        jmp rstrchrRet          
 
     rstrchrNotFound:
-        xor di, di
+        xor di, di              ; return = 0
     
     rstrchrRet:
         ret
@@ -205,7 +205,7 @@ rstrchr endp
 ;        third arg  - symbol to be found
 ; Exit : DI - address of the founded symbol
 ;             or '0' if there is no in string
-; Destr: DI
+; Destr: ES, DI, AX
 ;------------------------------------------------
 
 sstrchr proc
@@ -213,14 +213,14 @@ sstrchr proc
         push bp                 ; prologue
         mov bp, sp
 
-        mov al, [bp + 4]
+        mov ax, [bp + 4]        ; getting args
         mov di, [bp + 6]
         mov es, [bp + 8]
 
         cld
 
     sstrchrLoop:
-        cmp byte ptr es:[di], 0
+        cmp byte ptr es:[di], 0 
         je sstrchrNotFound
 
         scasb 
@@ -260,25 +260,25 @@ sstrchr endp
 ;              destination string
 ;        CX - max number of bytes to be copied 
 ; Exit : 
-; Destr: CX
+; Destr: CX, SI
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
 rstrncpy proc
 
-        push di
-        cld
+        push di                 ; saving di
+        cld                     ; DF = 0
 
     rstrncpyLoop:
-        cmp byte ptr ds:[si], 0
-        movsb
-        je rstrncpyRet
+        cmp byte ptr ds:[si], 0 ; is *string = 0
+        movsb                   ; move symb
+        je rstrncpyRet          ; stop if *string = 0
         loop rstrncpyLoop 
 
-        mov byte ptr es:[di], 0
+        mov byte ptr es:[di], 0 ; set terminating 0
 
     rstrncpyRet:
-        pop di
+        pop di                  ; restore di
         ret
 
 rstrncpy endp
@@ -306,7 +306,7 @@ rstrncpy endp
 ;
 ; Exit : DI - points to the first symbol of
 ;             destination string
-; Destr: CX
+; Destr: CX, DS, SI, ES, DI
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
@@ -315,7 +315,7 @@ sstrncpy proc
         push bp                 ; prologue
         mov  bp, sp
 
-        mov cx, [bp + 4 ]
+        mov cx, [bp + 4 ]       ; getting args
         mov di, [bp + 6 ]
         mov es, [bp + 8 ]
         mov si, [bp + 10]
@@ -374,23 +374,23 @@ sstrncpy endp
 
 rstrncmp    proc
 
-            cld
+            cld                 ; DF = 0
         
         rstrncmpLoop:
-            lodsb
+            lodsb               ; al = ds:[si]; si++
             mov dl, es:[di]
             inc di
 
-            cmp al, 0
+            cmp al, 0           ; if *first = 0 stop
             je  rstrncmpRet
 
-            cmp al, dl
+            cmp al, dl          ; if *first != *second stop
             jne rstrncmpRet
 
             loop rstrncmpLoop
 
         rstrncmpRet:
-            sub al, dl
+            sub al, dl          ; return value
             ret
 
 
@@ -412,25 +412,35 @@ rstrncmp    endp
 ; The behavior is undefined when either lhs 
 ; or rhs is the null pointer.
 ;
-; Entry: DS - points to the segment, where the 
-;        first string is stored
-;        ES - points to the segment, where the
-;        second string is stored
-;        SI - address of the first symbol of
-;             first string
-;        DI - address of the first symbol of
-;             second string
-;        CX - max amount of bytes to be compared
+; Entry: first  - points to the segment, where 
+;                 the first string is stored
+;        second  - address of the first symbol of
+;                 first string
+;        third  - points to the segment, where 
+;                 the second string is stored
+;        fourth - address of the first symbol of
+;                 second string
+;        fifth  - max amount of bytes to be 
+;                 compared
 ; Exit : AL - 0, if strings are equal
 ;             Positive value, if first string is
 ;             lexicographically more
 ;             Negative value, if second is
 ;             lexicographically less 
-; Destr: DI, SI, CX, DL
+; Destr: DI, SI, CX, DL, ES, DS
 ; Note: sets DF to zero
 ;------------------------------------------------
 
 sstrncmp    proc
+
+            push bp             ; prologue 
+            mov  bp, sp
+
+            mov ds, [bp + 12]   ; getting args
+            mov si, [bp + 10]
+            mov es, [bp + 8 ]
+            mov di, [bp + 6 ]
+            mov cx, [bp + 4 ]
 
             cld
         
@@ -449,6 +459,8 @@ sstrncmp    proc
 
         sstrncmpRet:
             sub al, dl
+
+            pop bp
             ret
 
 
@@ -474,7 +486,6 @@ sstrncmp    endp
 ;             string
 ; Exit : AX - number
 ; Destr: CX, SI, BX, DX
-; Note: sets DF to zero
 ;------------------------------------------------
 
 SPACE equ 020h
@@ -485,28 +496,25 @@ PLUS  equ 02Bh
 
 ratoi   proc
 
-        cld
+        xor bh, bh              ; clean bh
+        xor ax, ax              ; clean future return value
+        mov cx, 0Ah             ; base of system
 
-        xor bh, bh
-        xor ax, ax
-        mov cx, 0Ah
-
-    ratoiSkipSpaces:
+    ratoiSkipSpaces:            ; skip blank before number
         mov bl, ds:[si]
         inc si
-
         cmp dl, SPACE
         je ratoiSkipSpaces
 
-    ratoiLoop:
-        cmp bl, 0
+    ratoiLoop:                  ; main cycle
+        cmp bl, 0               ; if *string = 0 stop
         je ratoiRet
-        mul cx
+        mul cx                  ; ax = base * ax
 
-        sub bl, '0'
-        add ax, bx
+        sub bl, '0'             ; converting code of symb
+        add ax, bx              ; incrementing value
 
-        mov bl, ds:[si]
+        mov bl, ds:[si]         ; load next symbol
         inc si
         jmp ratoiLoop
 
@@ -514,6 +522,73 @@ ratoi   proc
         ret
 
 ratoi   endp
+
+;--------------------SATOI-----------------------
+; 
+; Description: Interprets an integer value in a 
+; byte string pointed to by str.
+; Discards any whitespace characters until the 
+; first non-whitespace character is found, then 
+; takes as many characters as possible to form a 
+; valid integer number representation and converts 
+; them to an integer value. The valid integer 
+; value consists of the following parts:
+; 1. numeric digits
+; 2. plus or minus sign (feature will be added soon)
+;
+; Entry: first  - points to segment, where string
+;                 is stored
+;        second - points to the first symbol of 
+;                 string
+; Exit : AX - number
+; Destr: CX, SI, BX, DX, DS
+; Note: sets DF to zero
+;------------------------------------------------
+
+SPACE equ 020h
+MINUS equ 02Dh
+PLUS  equ 02Bh
+
+;------------------------------------------------
+
+satoi   proc
+
+        push bp                 ; prologue 
+        mov  bp, sp
+
+        mov ds, [bp + 6]        ; getting args
+        mov si, [bp + 4]
+
+        cld
+
+        xor bh, bh
+        xor ax, ax
+        mov cx, 0Ah
+
+    satoiSkipSpaces:
+        mov bl, ds:[si]
+        inc si
+
+        cmp dl, SPACE
+        je satoiSkipSpaces
+
+    satoiLoop:
+        cmp bl, 0
+        je satoiRet
+        mul cx
+
+        sub bl, '0'
+        add ax, bx
+
+        mov bl, ds:[si]
+        inc si
+        jmp satoiLoop
+
+    satoiRet:
+        pop bp                  ; epilogue
+        ret
+
+satoi   endp
 
 ;--------------------RITOA-----------------------
 ; 
@@ -523,10 +598,11 @@ ratoi   endp
 ;             will be stored
 ;        SI - points tot the start of memory 
 ;             where string will be stored
-;        CL - base of the numeral system
-;
+;        CL - base of the numeral syste
 ;        Note: CL can be value only from 2 to 10
+;
 ;        BX - number
+;
 ; Exit : SI - points to the first symbol in 
 ;             string
 ; Destr: AX, CX
@@ -534,12 +610,12 @@ ratoi   endp
 
 ritoa   proc
 
-        mov ch, 1
-        mov ax, bx
+        mov ch, 1               ; lenght at least is 1
+        mov ax, bx              
 
-    ritoaCountLoop:
-        div cl
-
+    ritoaCountLoop:             ; counting number of digits 
+        div cl                  ; in number to get offset
+                                
         cmp al, 0
         je ritoaStopCount
 
@@ -551,25 +627,91 @@ ritoa   proc
         mov al, ch
         cbw
         add si, ax
-        dec si 
+        dec si                  ; si points to the last symb
 
         mov ax, bx
 
     ritoaLoop:
         div cl
-        add ah, '0'
-        mov ds:[si], ah
+        add ah, '0'             ; converting symbol code
+        mov ds:[si], ah         ; store symbol in string
 
         cmp al, 0
         je ritoaRet
         cbw
-        dec si
+        dec si                  ; going from end to start of string
         jmp ritoaLoop
 
     ritoaRet:
         ret
 
 ritoa   endp
+
+;--------------------SITOA-----------------------
+; 
+; Description: 
+;
+; Entry: first  - points to the segment, where 
+;                string will be stored
+;        second - points tot the start of memory 
+;                 where string will be stored
+;        third  - base of the numeral system
+;
+;        Note: CL can be value only from 2 to 10
+;        fourth - number to be converted
+;
+; Exit : SI - points to the first symbol in 
+;             string
+; Destr: AX, CX, DS
+;------------------------------------------------
+
+sitoa   proc
+
+        push bp                 ; prologue
+        mov  bp, sp
+
+        mov cx, [bp + 6 ]       ; getting args
+        mov si, [bp + 8 ]
+        mov ds, [bp + 10]
+
+        mov ch, 1
+        mov ax, [bp + 4]
+
+    sitoaCountLoop:
+        div cl
+
+        cmp al, 0
+        je sitoaStopCount
+
+        inc ch
+        cbw
+        jmp sitoaCountLoop
+
+    sitoaStopCount:
+        mov al, ch
+        cbw
+        add si, ax
+        dec si 
+
+        mov ax, [bp + 4]
+
+    sitoaLoop:
+        div cl
+        add ah, '0'
+        mov ds:[si], ah
+
+        cmp al, 0
+        je sitoaRet
+        cbw
+        dec si
+        jmp sitoaLoop
+
+    sitoaRet:
+        pop bp                  ; epilogue
+        ret
+
+sitoa   endp
+
 
 ;================================================
 
