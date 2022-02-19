@@ -40,13 +40,13 @@ org 100h
 ;================================================
 
 Start:      push ds
-            lea  ax, number
+            lea ax, NUMBER
             push ax
-            mov  ax, 7D6Ah
+            mov ax, 567d
             push ax
-            mov  ax, 16
-            push ax 
-            
+            mov ax, 10
+            push ax
+
             call snumtoa
 
             add sp, 8
@@ -617,14 +617,15 @@ rnumtoa     proc
 
         rnumtoaMain:
             mov ax, bx
-            lea di, RSYMB_TABLE ; address of the symbol table
+            ;lea di, RSYMB_TABLE ; address of the symbol table
                                 ; used to convert code to symbols
         rnumtoaLoop:
             xor dx, dx          ; for 'div' command
             div cx
 
             mov bx, dx          ; converting remainder to symbol
-            mov dl, [di + bx]   ; prints number from end
+            mov dl, [bx + offset RSYMB_TABLE]   
+                                ; prints number from end
             mov ds:[si], dl     
             dec si              ; iterate to next symbol
 
@@ -636,7 +637,7 @@ rnumtoa     proc
 
 rnumtoa     endp
 
-RSYMB_TABLE db '0123456789ABCDEF' 
+RSYMB_TABLE db '0123456789ABCDEF'
 
 ;--------------------SNUMTOA---------------------
 ;
@@ -674,14 +675,15 @@ snumtoa     proc
 
         snumtoaMain:
             mov ax, [bp + 6]
-            lea di, SSYMB_TABLE ; address of the symbol table
+            ;lea di, SSYMB_TABLE ; address of the symbol table
                                 ; used to convert code to symbols
         snumtoaLoop:
             xor dx, dx          ; for 'div' command
             div cx
 
             mov bx, dx          ; converting remainder to symbol
-            mov dl, [di + bx]   ; prints number from end
+            mov dl, [bx + offset SSYMB_TABLE]   
+                                ; prints number from end
             mov ds:[si], dl     
             dec si              ; iterate to next symbol
 
@@ -695,6 +697,107 @@ snumtoa     proc
 snumtoa     endp
 
 SSYMB_TABLE db '0123456789ABCDEF' 
+
+;-----------------RNUMTOA2-----------------------
+;
+; Description: optimized version of 'rnumtoa'
+;              function, used for numeric systems
+;              with base 2^n, n = 1, 2, 3 or 4
+; Entry:       DS - points to the segment, where
+;                   string will be stored
+;              SI - points to the first symbol 
+;                   in this string
+;              AX - number to be translated
+;              CL - n
+;              DX - mask
+; Exit:        SI - remains it value
+; Destr:       BX, AX
+;------------------------------------------------
+
+rnumtoa2    proc
+
+            mov bx, ax
+
+        rnumtoa2Count:          ; count shift in string
+            shr bx, cl
+            cmp bx, 0
+            je  rnumtoa2Loop    ; stop if bx == 0 
+
+            inc si              
+            jmp rnumtoa2Count
+
+        rnumtoa2Loop:           ; main cycle
+            mov bx, ax 
+            and bx, dx          ; using mask
+
+            mov bl, [bx + offset XlatTable]
+            mov ds:[si], bl
+            dec si
+
+            shr ax, cl          
+            cmp ax, 0
+            jne rnumtoa2Loop
+
+            inc si              ; si points to the start
+            ret
+
+rnumtoa2    endp
+
+XlatTable db '0123456789ABCDEF'
+
+;-----------------SNUMTOA2-----------------------
+;
+; Description: optimized version of 'rnumtoa'
+;              function, used for numeric systems
+;              with base 2^n, n = 1, 2, 3 or 4
+; Entry:       first  - points to the segment, 
+;                      where string will be stored
+;              second - points to the first 
+;                       symbol in this string
+;              third  - number to be translated
+;              fourth - n
+;              fifth  - mask
+; Exit:        SI - remains it value
+; WARNING:     DF must be 1   
+; Destr:       BX, DS, AX, CX
+;------------------------------------------------
+
+snumtoa2    proc
+
+            push bp
+            mov  bp, sp
+
+            mov ds, [bp + 12]
+            mov si, [bp + 10]
+            mov bx, [bp + 8 ]
+            mov cx, [bp + 6 ]
+
+        snumtoa2Count:          ; count shift in string
+            shr bx, cl
+            cmp bx, 0
+            je  snumtoa2Loop    ; stop if bx == 0 
+
+            inc si              
+            jmp snumtoa2Count
+
+            mov ax, [bp + 8]
+
+        snumtoa2Loop:           ; main cycle
+            mov bx, ax 
+            and bx, dx          ; using mask
+
+            mov al, [bx + offset XlatTable]
+            lodsb
+
+            shr ax, cl          
+            cmp ax, 0
+            jne snumtoa2Loop
+
+            inc si              ; si points to the start
+            pop bp
+            ret
+
+snumtoa2    endp
 
 ;================================================
 
