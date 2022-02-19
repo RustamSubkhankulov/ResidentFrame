@@ -39,23 +39,15 @@ org 100h
 ;
 ;================================================
 
-Start:      push ds
-            lea ax, NUMBER
-            push ax
-            mov ax, 567d
-            push ax
-            mov ax, 10
-            push ax
+Start:      lea si, NUMSTR
 
-            call snumtoa
-
-            add sp, 8
+            call ratoi
 
             Terminate:
             mov ah, STOP
             int 21h
 
-NUMSTR db '1234', 0, '567'
+NUMSTR db ' -102', 0
 FSTSTR db 'hello', 0
 SNDSTR db 'hello world', 0
 NUMBER db 20 dup (1)
@@ -74,8 +66,8 @@ NUMBER db 20 dup (1)
 ;             the string
 ;        ES - points to the correct segment,
 ;             where string is stored
-; Exit : AX - lenght of the string
-; Destr: CX, DI
+; Exit : CX - lenght of the string
+; Destr: DI
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
@@ -93,7 +85,6 @@ rstrlen  proc
         jmp rstrlenLoop
 
     rstrlenFin:
-        xchg ax, cx             ; return value through ax
         ret 
 
 rstrlen  endp
@@ -125,19 +116,7 @@ sstrlen proc
         mov  di, [bp + 4]       ; getting args
         mov  es, [bp + 6]       
 
-        cld                     
-        xor al, al
-        xor cx, cx
-
-    sstrlenLoop:
-        scasb
-        je sstrlenFin
-
-        inc cx
-        jmp sstrlenLoop
-
-    sstrlenFin:
-        xchg ax, cx
+        call rstrlen
 
         pop bp                  ; epilogue
         ret 
@@ -211,30 +190,14 @@ rstrchr endp
 sstrchr proc
 
         push bp                 ; prologue
-        mov bp, sp
+        mov  bp, sp
 
         mov ax, [bp + 4]        ; getting args
         mov di, [bp + 6]
         mov es, [bp + 8]
 
-        cld
+        call rstrchr
 
-    sstrchrLoop:
-        cmp byte ptr es:[di], 0 
-        je sstrchrNotFound
-
-        scasb 
-        je  sstrchrFound
-        jmp sstrchrLoop
-
-    sstrchrFound:
-        dec di
-        jmp sstrchrRet
-
-    sstrchrNotFound:
-        xor di, di
-    
-    sstrchrRet:
         pop bp                  ; epilogue
         ret
 
@@ -259,7 +222,7 @@ sstrchr endp
 ;        DI - addres of the first symbol of
 ;              destination string
 ;        CX - max number of bytes to be copied 
-; Exit : 
+; Exit : None
 ; Destr: CX, SI
 ; Note : Sets DF to zero
 ;------------------------------------------------
@@ -321,18 +284,8 @@ sstrncpy proc
         mov si, [bp + 10]
         mov ds, [bp + 12]
 
-        cld
+        call rstrncpy
 
-    sstrncpyLoop:
-        cmp byte ptr ds:[si], 0
-        movsb
-        je sstrncpyRet
-        loop sstrncpyLoop 
-
-        mov byte ptr es:[di], 0
-
-    sstrncpyRet:
-        mov di, [bp + 6]        ; epilogue
         pop bp
         ret
 
@@ -441,24 +394,8 @@ sstrncmp    proc
             mov es, [bp + 8 ]
             mov di, [bp + 6 ]
             mov cx, [bp + 4 ]
-
-            cld
         
-        sstrncmpLoop:
-            lodsb
-            mov dl, es:[di]
-            inc di
-
-            cmp al, 0
-            je  sstrncmpRet
-
-            cmp al, dl
-            jne  sstrncmpRet
-
-            loop sstrncmpLoop
-
-        sstrncmpRet:
-            sub al, dl
+            call rstrncmp
 
             pop bp
             ret
@@ -484,7 +421,7 @@ sstrncmp    endp
 ;             stored
 ;        SI - points to the first symbol of 
 ;             string
-; Exit : AX - number
+; Exit : AX - number ( double word (DX, AX) )
 ; Destr: CX, SI, BX, DX
 ;------------------------------------------------
 
@@ -494,17 +431,33 @@ PLUS  equ 02Bh
 
 ;------------------------------------------------
 
+.NextSymb   macro
+            nop
+            mov bl, ds:[si]
+            inc si
+            nop
+            endm
+
 ratoi   proc
 
         xor bh, bh              ; clean bh
         xor ax, ax              ; clean future return value
         mov cx, 0Ah             ; base of system
+        mov dx, 1               ; sign multyplier
 
     ratoiSkipSpaces:            ; skip blank before number
-        mov bl, ds:[si]
-        inc si
-        cmp dl, SPACE
+        .NextSymb
+        cmp bl, SPACE
         je ratoiSkipSpaces
+
+        cmp bl, PLUS            ; plus sign
+        je ratoiPos
+
+        cmp bl, MINUS           ; minus sign
+        je ratoiNeg
+
+    ratoiMain:
+        push dx                 ; save sign multyplier
 
     ratoiLoop:                  ; main cycle
         cmp bl, 0               ; if *string = 0 stop
@@ -518,7 +471,18 @@ ratoi   proc
         inc si
         jmp ratoiLoop
 
+    ratoiPos:
+        .NextSymb               ; iterate to next symbol
+        jmp ratoiMain
+
+    ratoiNeg:
+        mov dx, -1              ; change sign multyplier
+        .NextSymb               ; iterate to next symbol
+        jmp ratoiMain
+
     ratoiRet:
+        pop dx                  ; get sign multyplier
+        mul dx
         ret
 
 ratoi   endp
@@ -559,32 +523,8 @@ satoi   proc
         mov ds, [bp + 6]        ; getting args
         mov si, [bp + 4]
 
-        cld
-
-        xor bh, bh
-        xor ax, ax
-        mov cx, 0Ah
-
-    satoiSkipSpaces:
-        mov bl, ds:[si]
-        inc si
-
-        cmp dl, SPACE
-        je satoiSkipSpaces
-
-    satoiLoop:
-        cmp bl, 0
-        je satoiRet
-        mul cx
-
-        sub bl, '0'
-        add ax, bx
-
-        mov bl, ds:[si]
-        inc si
-        jmp satoiLoop
-
-    satoiRet:
+        call ratoi
+        
         pop bp                  ; epilogue
         ret
 
@@ -617,8 +557,7 @@ rnumtoa     proc
 
         rnumtoaMain:
             mov ax, bx
-            ;lea di, RSYMB_TABLE ; address of the symbol table
-                                ; used to convert code to symbols
+
         rnumtoaLoop:
             xor dx, dx          ; for 'div' command
             div cx
@@ -665,32 +604,8 @@ snumtoa     proc
             mov si, [bp + 8 ]
             mov ds, [bp + 10]   
 
-        snumtoaCount:           ; counting offset
-            xor dx, dx
-            div cx
-            cmp ax, 0
-            je snumtoaMain
-            inc si              ; increments counter
-            jmp snumtoaCount
+            call rnumtoa
 
-        snumtoaMain:
-            mov ax, [bp + 6]
-            ;lea di, SSYMB_TABLE ; address of the symbol table
-                                ; used to convert code to symbols
-        snumtoaLoop:
-            xor dx, dx          ; for 'div' command
-            div cx
-
-            mov bx, dx          ; converting remainder to symbol
-            mov dl, [bx + offset SSYMB_TABLE]   
-                                ; prints number from end
-            mov ds:[si], dl     
-            dec si              ; iterate to next symbol
-
-            cmp ax, 0
-            jne snumtoaLoop
-
-            inc si              ; si points to the start of string
             pop bp              ; epilogue
             ret
 
@@ -769,31 +684,12 @@ snumtoa2    proc
 
             mov ds, [bp + 12]
             mov si, [bp + 10]
-            mov bx, [bp + 8 ]
+            mov ax, [bp + 8 ]
             mov cx, [bp + 6 ]
+            mov dx, [bp + 4 ]
 
-        snumtoa2Count:          ; count shift in string
-            shr bx, cl
-            cmp bx, 0
-            je  snumtoa2Loop    ; stop if bx == 0 
+            call rnumtoa2
 
-            inc si              
-            jmp snumtoa2Count
-
-            mov ax, [bp + 8]
-
-        snumtoa2Loop:           ; main cycle
-            mov bx, ax 
-            and bx, dx          ; using mask
-
-            mov al, [bx + offset XlatTable]
-            lodsb
-
-            shr ax, cl          
-            cmp ax, 0
-            jne snumtoa2Loop
-
-            inc si              ; si points to the start
             pop bp
             ret
 
