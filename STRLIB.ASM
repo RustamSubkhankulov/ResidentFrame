@@ -39,15 +39,17 @@ org 100h
 ;
 ;================================================
 
-Start:      lea si, NUMSTR
+Start:      lea di, FSTSTR
+            mov ax, ds
+            mov es, ax
 
-            call ratoi
+            call rstrlen
 
             Terminate:
             mov ah, STOP
             int 21h
 
-NUMSTR db ' -102', 0
+NUMSTR db '    +102', 0
 FSTSTR db 'hello', 0
 SNDSTR db 'hello world', 0
 NUMBER db 20 dup (1)
@@ -66,8 +68,8 @@ NUMBER db 20 dup (1)
 ;             the string
 ;        ES - points to the correct segment,
 ;             where string is stored
-; Exit : CX - lenght of the string
-; Destr: DI
+; Exit : DI - lenght of the string
+; Destr: CX
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
@@ -75,7 +77,7 @@ rstrlen  proc
 
         cld                     ; DF = 0
         xor al, al              ; comparing reg
-        xor cx, cx              ; reset counter
+        xor cx, cx
 
     rstrlenLoop:                ; main cycle
         scasb                   ; cmp al, es:[di]; di++; 
@@ -103,8 +105,8 @@ rstrlen  endp
 ;        string from stack
 ;        first  arg - segment address
 ;        second arg - string address(offset)
-; Exit : AX - lenght of the string
-; Destr: CX, DI, ES
+; Exit : CX - lenght of the string
+; Destr: DI, ES
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
@@ -152,7 +154,7 @@ rstrchr proc
         je rstrchrNotFound      ; stop if *string zero
 
         scasb                   ; cmp al, es:[di]; di++;
-        je rstrchrFound         ; symbol found
+        je  rstrchrFound        ; symbol found
         jmp rstrchrLoop
 
     rstrchrFound:
@@ -443,7 +445,7 @@ ratoi   proc
         xor bh, bh              ; clean bh
         xor ax, ax              ; clean future return value
         mov cx, 0Ah             ; base of system
-        mov dx, 1               ; sign multyplier
+        mov dx, 1               ; default sign multyplier
 
     ratoiSkipSpaces:            ; skip blank before number
         .NextSymb
@@ -550,6 +552,7 @@ rnumtoa     proc
         rnumtoaCount:           ; counting offset
             xor dx, dx
             div cx
+
             cmp ax, 0
             je rnumtoaMain
             inc si              ; increments counter

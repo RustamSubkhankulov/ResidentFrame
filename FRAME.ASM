@@ -27,8 +27,8 @@ org 100h
 ;       corner, horizontal symbol on the last line
 ;       and rigth-bottom corner
 ;
-;       Symbols of user's style frame must be printed 
-;       without spaces between
+;       Symbols of user's style frame must be 
+;       printed without spaces between
 ;
 ; Constant frame parameters:
 ;       COLOR_ATTR - color attribute for frame
@@ -76,6 +76,8 @@ COLOR_ATTR  = 4Eh           ; color attribute for the frame
                             ; this default color attribute
                             ; prints yellow symbols on the right
                             ; background 
+
+SGNTBLLEN   = 09d           ; lenght of the sign table
  
 ;===============ASCII-SYMBOL-CODES===============
 
@@ -254,7 +256,7 @@ GetFrameType    proc
 GetUserFrame    proc
 
                 lea bx, UserFrame
-                mov cx, 9
+                mov cx, SGNTBLLEN
 
             RTloop:
                 lodsb                     
@@ -316,7 +318,7 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 DrawFrame   proc 
 
             mov al, dl          ; first line of
-            mov ah, 9           ; the frame
+            mov ah, SGNTBLLEN   ; the frame
             mul ah
             xor ah, ah
             mov bx, ax
