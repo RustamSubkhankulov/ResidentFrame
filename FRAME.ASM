@@ -53,16 +53,19 @@ CMND_LN     equ 081h        ; start of the command
 ;----------------VIDEO-MEMORY--------------------
 
 VIDEOSEG    equ 0B800h      ; address of video memory segment
-FRAME_LEN   = 80           ; lenght of the video frame
+FRAME_LEN   = 80            ; lenght of the video frame
 FRAME_WID   = 25            ; width  of the video frame
 
-CENTER_LINE = FRAME_WID / 2 ; center line   of the video frame
-CENTER_COLM = FRAME_LEN / 2 ; center column of the video frame
+StartLine   = 10             ; first line   of the frame
+StartColm   = 20            ; first column of the frame
 
-START_LINE = CENTER_LINE - WID / 2
-START_COLM = CENTER_COLM - LEN / 2
+;CENTER_LINE = FRAME_WID / 2 ; center line   of the video frame
+;CENTER_COLM = FRAME_LEN / 2 ; center column of the video frame
 
-;--------------INTERRUPTION-CODES----------------
+;START_LINE = CENTER_LINE - WID / 2
+;START_COLM = CENTER_COLM - LEN / 2
+
+;--------------INT-21H-FUNCTIONS-----------------
 
 PUTS		equ 09h	    	; interrupt code for printing line		
 STOP		equ 04Ch    	; interrupt code for terminating
@@ -85,10 +88,13 @@ SPACE	 	= 020h		    ; srace symbol
 
 ;===================MAIN=BODY====================
 
-Start:      call GetTypeAndText
-            call DrawFrame
+Start:      cld
 
-            cmp dh, 0
+            call ParseCmndLine
+            call DrawFrame
+            .PAUSE
+
+            cmp word ptr TextLen, 0
             je Terminate
 
             call WriteText
@@ -108,32 +114,28 @@ locals RT
 ; WriteText
 ;
 ; Entry: DH - number of symbols to be printed
+;        DF == 0
+;        AH == color attribute
 ; Exit : None
-; Destr: AX, BX, CX, SI, DI
+; Destr: AL, CX, SI, DI
 ;------------------------------------------------
 
 WriteText       proc
 
-                mov al, dh
-                cbw
-                mov cx, ax
+                mov di, ((StartLine + WID/2) * FRAME_LEN + StartColm) * 2
+                                                ; di == start position of text
+                mov si, LEN
+                sub si, word ptr TextLen
+                shr si ,1
+                shl si, 1
+                add di, si                      ; centering text in the frame
 
-                lea si, FRAME_TEXT
-                shr dh, 1
-                mov bh, CENTER_COLM
-                sub bh, dh
-
-                xor bl, bl
-                xchg bl, bh
-                
-                add bx, CENTER_LINE  * FRAME_LEN
-                shl bx, 1
-                mov di, bx
-
-                mov ah, COLOR_ATTR
+                lea si, FRAME_TEXT              ; si -> address of the text array
+                mov cx, word ptr TextLen        ; cx is counter
+                mov ah, COLOR_ATTR              ; color attribute
 
             RTloop:
-                lodsb
+                lodsb                           
                 stosw
                 loop RTloop
 
@@ -142,27 +144,27 @@ WriteText       proc
 
 ;------------------------------------------------
 ;
-; GetTypeAndText
+; ParseCmndLine
 ;
-; Entry: None
-; Exit : DL - frame type, DH - number of symbols in note
-; Destr: AX, BX, SI, Cx, DI
+; Entry: expects DF == 0
+; Exit : FrameType variable - frame type, 
+;        TextLen variable - number of symbols in note
+; Destr: AX, SI, CX, DI
 ;------------------------------------------------
 
-GetTypeAndText  proc
+ParseCmndLine   proc
 
-                xor dh, dh
-                mov si, CMND_LN + 1
-                mov dl, [si]
+                mov si, CMND_LN + 1         ; si points to the first symbol 
+                mov dl, [si]                ; in cmnd line
                 
-                cmp dl, '$'
+                cmp dl, '$'                 ; if *si != '$' -> no text
                 jne RTnoText
 
-                inc si
+                inc si                      ; else si++ and get text
                 call GetFrameText
 
             RTnoText:
-                call GetFrameType
+                call GetFrameType           ; get type of the frame
 
             RTret:
                 ret
@@ -173,49 +175,56 @@ GetTypeAndText  proc
 ; GetFrameText
 ;
 ; Entry: SI - address of the first symbol of text in cmnd line
-; Exit : DH - number of symbols read 
+;        expects DF == 0
+; Exit : TextLen - number of symbols read 
 ; Destr: AX, BX, CX, DX
 ;------------------------------------------------
 
 GetFrameText    proc
 
-                lea bx, FRAME_TEXT
-                mov cx, LEN - 2
+                xor ah, ah                  ; reset number of symbols
+
+                mov cx, ds                  ; es = ds
+                mov es, cx
+
+                lea di, FRAME_TEXT          ; bx points to the array
+                                            ; where text will be stored 
+                mov cx, LEN - 2             ; max lenght of the text
 
             RTloop:
-                lodsb
-                cmp al, '$'
-                je RTisSpace
+                lodsb                       ; al = ds:[si]; si++;
+                cmp al, '$'                 ; if al == $ -> end of text
+                je RTisSpace                ; next symb after $ must be SPACE
 
-                mov [bx], al
-                inc bx
-                inc dh
+                stosb                       ; store symbol in FRAME_TEXT
+                inc ah                      ; increment counter of symbols
 
                 loop RTloop
 
             RTis$:
-                lodsb
-                mov dl, '$'
-                inc si
+                lodsb                       ; load next symbol
+                mov dl, '$'                 ; comparing symbol
+                inc si                      ; si -> FrameTypeNumber
                 jmp RTcompare
 
             RTisSpace:
-                lodsb
-                mov dl, ' '
+                lodsb                       ; al = ds:[si]; si++
+                mov dl, ' '                 ; comparing symbol
                 jmp RTcompare
 
             RTcompare:
-                cmp dl, al
-                jne RTinputErr
+                cmp dl, al                  ; compare with expected symbol
+                jne RTinputErr              ; if NE -> Incorrect Format of Input
                 jmp RTret
 
-            RTinputErr:
+            RTinputErr:                     ; print error msg and stop
                 mov ah, 09h
                 mov dx, offset InputErrMsg
                 int 21h
                 jmp Terminate
 
             RTret:
+                mov byte ptr TextLen, ah
                 ret
                 endp
 
@@ -225,22 +234,25 @@ InputErrMsg db 'Incorrect format of the input$'
 ; GetFrameType
 ;
 ; Entry: SI - address of the frame type symbol in cmnd line
-; Exit : DL - frame type
-; Destr: AL, BX, SI, DL
+;        expects DF == 0
+; Exit : FrameType variable = number of frame type ( from 0 to 3)
+; Destr: AL, SI
 ;------------------------------------------------
 
 GetFrameType    proc
 
-                mov dl, [si]
-                sub dl, '0'
+                lodsb                       ; al = ds:[si++];
+                                            ; expects si -> numbet of type
+                sub al, '0'                 ; code -> number
 
-                cmp dl, 3
-                jne RTret
+                cmp al, 3                   ; if NOT User Style of frame
+                jne RTret                   ; jmp to return
 
-                add si, 2
-                call GetUserFrame
+                inc si                      ; skip one more symbols 
+                call GetUserFrame           ; get symbols for uset style of frame
 
             RTret:
+                mov byte ptr FrameType, al  ; save frame type in variable
                 ret 
                 endp
 
@@ -249,21 +261,18 @@ GetFrameType    proc
 ; GetUserFrame
 ;
 ; Entry: SI points to the first symbol of user frame symbols
+;        ES must be equal DS
+;        expects DF == 0
 ; Exit : None
-; Destr: AL, BX, SI
+; Destr: AL, DI, SI, CX
 ;------------------------------------------------
 
 GetUserFrame    proc
 
-                lea bx, UserFrame
-                mov cx, SGNTBLLEN
+                lea di, UserFrame           ; array for uset style symbols
+                mov cx, SGNTBLLEN           ; cx == SGNTBLLEN, number of symbols expected
 
-            RTloop:
-                lodsb                     
-                mov [bx], al
-                inc bx
-
-                loop RTloop
+                rep movsb                   ; ds:[si++] -> es:[di++]
 
                 ret
                 endp
@@ -274,33 +283,41 @@ GetUserFrame    proc
 ; Entry: AH - color attribute, CX - lenght 
 ;        SI - address of symbol string
 ;        DI - destination address
+;        ES - destination segment
 ; Exit : None   
-; Desrt: AX, CX, SI, DI
-; After process: SI:=SI + 3
+; Desrt: AL, SI, DI
+; After process: SI := SI + 3
+;                DI := DI + 2 * LEN
 ;------------------------------------------------
 
 DrawLine    proc
 
-            lodsb
-            stosw
+            push cx             ; save cx value
 
-            lodsb
-            sub cx, 2
-            jbe RTstopDrwLn     ; Incorrect lenght
-            rep stosw           ; of the frame
+            lodsb               ; al = ds:[si++]; first symb of line
+            stosw               ; es:[di] = ax; di += 2;
 
-            lodsb
-            stosw 
+            lodsb               ; al = next - middle - symbol of line
+
+            sub cx, 2           ; number of middle symbols to be printed
+            jbe RTstopDrwLn     ; Incorrect lenght of line
+
+            rep stosw           ; es:[di] = ax; di += 2; cx times
+
+            lodsb               ; al = last symbol of line; si++;
+            stosw               ; es:[di] = ax; di += 2; 
 
             jmp RTret
 
-        RTstopDrwLn:
+        RTstopDrwLn:            ; print error msg 
             mov ah, 09h
             mov dx, offset DrwLnErrMsg
             int 21h
             jmp Terminate
 
         RTret:
+            pop cx              ; restore cx value
+
             ret
             endp    
 
@@ -310,63 +327,45 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 ;
 ; DrawFrame
 ;
-; Entry: DL - frame type    
+; Entry: DL - frame type
 ; Exit : None
-; Destr: AX, BX, CX, DI, SI
+; Destr: AL, BX, CX, DI, SI
 ;------------------------------------------------
 
 DrawFrame   proc 
 
-            mov al, dl          ; first line of
-            mov ah, SGNTBLLEN   ; the frame
-            mul ah
-            xor ah, ah
-            mov bx, ax
+            mov si, VIDEOSEG
+            mov es, si           ; es == 0B800h
 
-            lea si, FRAMES[bx]
-            mov di, (START_LINE * FRAME_LEN + START_COLM) * 2
-            
-            mov ah, COLOR_ATTR
-            mov cx, LEN
+            mov si, word ptr FrameType
+            shl si, 3
+            add si, word ptr FrameType    
+                                 ; si == SGNTNLLEN * FrameType   
+            lea si, FRAMES[si]   ; si == address of the Frame Symbols
 
-            mov bx, VIDEOSEG
-            mov es, bx
+            mov ah, COLOR_ATTR   ; ah == color attribute
+            mov di, (StartLine * FRAME_LEN + StartColm) * 2
+                                 ; mov di to the start of the first line
+            mov cx, LEN          ; cx = lenght of the frame
 
-            call DrawLine
+            call DrawLine        ; draw first line
 
-            mov bx, WID - 1     ; middle lines of
-            cmp bx, 0           ; the frame
-            JBE RTstop
+            mov bx, WID - 2      ; number of the middle lines on frame
+            add di, (FRAME_LEN - LEN) * 2
+                                 ; di -> start of the next line
 
-        RTmiddleLines:
-            mov cx, LEN
+        MiddleLines:              ; middle lines cycle
+            call DrawLine        ; print line
+            add di, (FRAME_LEN - LEN) * 2
+            sub si, 3            ; si -> first symbol for the middle line
+                                 ; di -> start of the mext line
+            dec bx               ; decremenint counter
+            cmp bx, 0            
+            jne MiddleLines      ; if counter != 0 repeat
 
-            mov al, bl
-            add al, START_LINE - 1
-            mov ah, FRAME_LEN * 2
-            mul ah
-            add ax, START_COLM * 2
-            mov di, ax
-
-            mov ah, COLOR_ATTR
-
-            call DrawLine
-
-            dec bx
-            cmp bx, 1
-            je RToutLoop
-
-            sub si, 3
-            jmp RTmiddleLines
-
-        RToutLoop:
-
-            mov cx, LEN         ; last line of 
-                                ; the frame
-            mov di, (START_LINE + WID - 1) * FRAME_LEN * 2 + START_COLM * 2
-
-            call DrawLine
-            jmp RTret
+            add si, 3            ; si -> first symbol for the last line
+            call DrawLine        ; print last line
+            jmp RTret            ; jmp to return
 
         RTstop:
             mov ah, 09h
@@ -381,6 +380,9 @@ DrawFrame   proc
 DrwFrErrMsg db 'Incorrect width of the frame$'
 
 ;================GLOBAL=VARIABLES================
+
+TextLen     db 0, 0
+FrameType   db 0, 0
 
 FRAMES:     
 

@@ -17,7 +17,8 @@ org 100h
 ;   3. rstrncpy
 ;   4. rstrncmp
 ;   5. ratoi
-;   6. ritoa
+;   6. rnumtoa
+;   7. rnumtoa2
 ;
 ;   Passing arguments through stack
 ;   1. sstrlen
@@ -25,7 +26,8 @@ org 100h
 ;   3. sstrncpy
 ;   4. sstrncmp
 ;   5. satoi
-;   6. sitoa
+;   6. snumtoa
+;   7. snumtoa2
 ;
 ; Every function' description conrains arguements
 ; and where function expects them to find, 
@@ -39,16 +41,20 @@ org 100h
 ;
 ;================================================
 
-Start:      lea di, FSTSTR
-            mov ax, ds
-            mov es, ax
+Start:      mov di, ds
+            mov es, di
 
-            call rstrlen
+            lea si, FSTSTR
+            lea di, SNDSTR
+            mov cx, 4d
+
+            call rstrncmp
 
             Terminate:
             mov ah, STOP
             int 21h
 
+NULSTR db 0
 NUMSTR db '    +102', 0
 FSTSTR db 'hello', 0
 SNDSTR db 'hello world', 0
@@ -68,26 +74,23 @@ NUMBER db 20 dup (1)
 ;             the string
 ;        ES - points to the correct segment,
 ;             where string is stored
-; Exit : DI - lenght of the string
-; Destr: CX
+; Exit : CX - lenght of the string
+; Destr: AL
 ; Note : Sets DF to zero
 ;------------------------------------------------
 
 rstrlen  proc
 
         cld                     ; DF = 0
-        xor al, al              ; comparing reg
-        xor cx, cx
+        mov cx, 0FFFFh          ; counter
+        xor al, al              ; comparing symbol
 
-    rstrlenLoop:                ; main cycle
-        scasb                   ; cmp al, es:[di]; di++; 
-        je rstrlenFin           ; stop if zero find
+        repne scasb             ; main cycle   
+ 
+        add cx, 2                
+        neg cx                  ; get lenght of the string
 
-        inc cx                  ; increment counter
-        jmp rstrlenLoop
-
-    rstrlenFin:
-        ret 
+        ret
 
 rstrlen  endp
 
@@ -151,13 +154,11 @@ rstrchr proc
 
     rstrchrLoop:
         cmp byte ptr es:[di], 0 ; is *string = 0
-        je rstrchrNotFound      ; stop if *string zero
+        je rstrchrNotFound      ; stop if *string zero                                      
 
         scasb                   ; cmp al, es:[di]; di++;
-        je  rstrchrFound        ; symbol found
-        jmp rstrchrLoop
+        jne rstrchrLoop         ; while al != es:[di] repeat
 
-    rstrchrFound:
         dec di                  ; return to found symb
         jmp rstrchrRet          
 
@@ -231,20 +232,22 @@ sstrchr endp
 
 rstrncpy proc
 
-        push di                 ; saving di
-        cld                     ; DF = 0
+        push di                     ; save DI value
+        cld                         ; DF = 0
 
     rstrncpyLoop:
-        cmp byte ptr ds:[si], 0 ; is *string = 0
-        movsb                   ; ds:[si]->es:[di]; si++; di++;
-        je rstrncpyRet          ; stop if *string = 0
-        loop rstrncpyLoop       ; cx--;
+        lodsb                       ; al = ds:[si]; si++;
+        cmp al, 0                   
+        je rstrncpyRet              ; if al == 0 stop
 
-        mov byte ptr es:[di], 0 ; set terminating 0
+        stosb                       ; es:[di] = al; di++;
+        loop rstrncpyLoop
 
     rstrncpyRet:
-        pop di                  ; restore di
-        ret
+        mov byte ptr es:[di], 0     ; set terminating NULL
+
+        pop di                      ; restore DI value
+        ret     
 
 rstrncpy endp
 
@@ -330,24 +333,24 @@ sstrncpy endp
 rstrncmp    proc
 
             cld                 ; DF = 0
-        
+
         rstrncmpLoop:
-            lodsb               ; al = ds:[si]; si++
-            mov dl, es:[di]
-            inc di
+            lodsb               ; al = ds:[si]; si++;
 
-            cmp al, 0           ; if *first = 0 stop
-            je  rstrncmpRet
+            cmp al, 0           ; if al == 0 stop
+            je rstrncmpRet      
 
-            cmp al, dl          ; if *first != *second stop
-            jne rstrncmpRet
+            cmp al, es:[di]     ; cmp strings
+            jne rstrncmpRet     ; if NE -> jmp ret
 
-            loop rstrncmpLoop
+            inc di              ; ds -> next symbol in string
+            loop rstrncmpLoop   ; repeat while cx != 0
+
+            dec di 
 
         rstrncmpRet:
-            sub al, dl          ; return value
-            ret
-
+            sub al, es:[di]     ; get returning value
+            ret 
 
 rstrncmp    endp
 
@@ -369,7 +372,7 @@ rstrncmp    endp
 ;
 ; Entry: first  - points to the segment, where 
 ;                 the first string is stored
-;        second  - address of the first symbol of
+;        second  - address of the first symbol of                   
 ;                 first string
 ;        third  - points to the segment, where 
 ;                 the second string is stored
@@ -459,7 +462,7 @@ ratoi   proc
         je ratoiNeg
 
     ratoiMain:
-        push dx                 ; save sign multyplier
+        push dx                 ; save sign multyplier          
 
     ratoiLoop:                  ; main cycle
         cmp bl, 0               ; if *string = 0 stop
@@ -648,7 +651,7 @@ rnumtoa2    proc
             mov bx, ax 
             and bx, dx          ; using mask
 
-            mov bl, [bx + offset XlatTable]
+            mov bl, [bx + offset XlatTable]                 ; include 
             mov ds:[si], bl
             dec si
 
