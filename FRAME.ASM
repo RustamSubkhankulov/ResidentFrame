@@ -1,6 +1,6 @@
-.model tiny
-.code 
-org 100h
+;.model tiny
+;.code 
+;org 100h
 
 ;===================USING========================
 ;
@@ -56,8 +56,8 @@ VIDEOSEG    equ 0B800h      ; address of video memory segment
 FRAME_LEN   = 80            ; lenght of the video frame
 FRAME_WID   = 25            ; width  of the video frame
 
-StartLine   = 10             ; first line   of the frame
-StartColm   = 20            ; first column of the frame
+StartLine   = 0             ; first line   of the frame
+StartColm   = 0            ; first column of the frame
 
 ;CENTER_LINE = FRAME_WID / 2 ; center line   of the video frame
 ;CENTER_COLM = FRAME_LEN / 2 ; center column of the video frame
@@ -72,8 +72,8 @@ STOP		equ 04Ch    	; interrupt code for terminating
 
 ;--------------FRAME-PARAMETERS------------------
 
-WID	    	= 11d		    ; width  of the frame
-LEN		    = 40d		    ; lenght of the frame
+WID	    	= 12d		    ; width  of the frame
+LEN		    = 13d		    ; lenght of the frame
 COLOR_ATTR  = 4Eh           ; color attribute for the frame
                             ;
                             ; this default color attribute
@@ -84,21 +84,28 @@ SGNTBLLEN   = 09d           ; lenght of the sign table
  
 ;===============ASCII-SYMBOL-CODES===============
 
-SPACE	 	= 020h		    ; srace symbol
+SPACE	 	= 020h		    ; space symbol
 
 ;===================MAIN=BODY====================
 
-Start:      cld
+;Start:      cld
 
-            call ParseCmndLine
-            call DrawFrame
-            .PAUSE
+            ;call ParseCmndLine
+            ;call DrawFrame
+            ;.PAUSE
 
-            cmp word ptr TextLen, 0
-            je Terminate
+            ;cmp word ptr TextLen, 0
+            ;je Terminate
 
-            call WriteText
-            .PAUSE
+
+            ;mov bx, 3               ; first string
+            ;lea si, FRAME_TEXT      ; address of the string 
+            ;mov cl, TextLen
+            ;xor ch, ch              ; cx = number of the symbols in string
+            ;mov ah, COLOR_ATTR      ; color attribute
+
+            ;call WriteTextStr
+            ;.PAUSE
 
         Terminate:
             mov ah, STOP
@@ -109,12 +116,54 @@ Start:      cld
 
 locals RT
 
-;------------------------------------------------
+;--------------WriteTextStr----------------------
 ;
+; Descr: writes text on the particular line of
+;        the frame, string will be centered
+;        in the frame
+;
+; Warning: function is not secure for the number
+;          of the line, user must use correct 
+;          number
+;
+; Entry: ES -> 0B800h
+;        DS:SI -> string to be printed
+;        CX = number of symbols in string
+;        AH = color attribute 
+;        BX - number of the line 
+; Destr: SI = SI + CX, DI, BX
+;------------------------------------------------
+
+WriteTextStr    proc
+
+                mov di, (StartLine * FRAME_LEN + StartColm)
+                                                ; di == start position of text
+                
+                shl bx, 4                       ; bx = bx * 16
+                add di, bx                            
+                shl bx, 2                       ; bx = bx * 64
+                add di, bx                      ; di -> start of the choosed line 
+
+                shl di, 1                       ; di = di * 2
+
+                mov bx, LEN
+                sub bx, cx  
+                shr bx, 1                       ; correcting addres (divides by 2)
+                shl bx, 1
+                add di, bx                      ; centering text in the frame
+ 
+            RTLoop:
+                lodsb                           ; write text
+                stosw 
+                loop RTLoop
+
+                ret 
+WriteTextStr    endp
+
+;------------------------------------------------
 ; WriteText
 ;
-; Entry: DH - number of symbols to be printed
-;        DF == 0
+; Entry: expects DF == 0
 ;        AH == color attribute
 ; Exit : None
 ; Destr: AL, CX, SI, DI
@@ -126,7 +175,7 @@ WriteText       proc
                                                 ; di == start position of text
                 mov si, LEN
                 sub si, word ptr TextLen
-                shr si ,1
+                shr si ,1                       ; correcting addres (divides by 2)
                 shl si, 1
                 add di, si                      ; centering text in the frame
 
@@ -149,6 +198,7 @@ WriteText       proc
 ; Entry: expects DF == 0
 ; Exit : FrameType variable - frame type, 
 ;        TextLen variable - number of symbols in note
+;
 ; Destr: AX, SI, CX, DI
 ;------------------------------------------------
 
@@ -313,7 +363,7 @@ DrawLine    proc
             mov ah, 09h
             mov dx, offset DrwLnErrMsg
             int 21h
-            jmp Terminate
+            jmp Terminate          
 
         RTret:
             pop cx              ; restore cx value
@@ -327,7 +377,7 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 ;
 ; DrawFrame
 ;
-; Entry: DL - frame type
+; Entry: None
 ; Exit : None
 ; Destr: AL, BX, CX, DI, SI
 ;------------------------------------------------
@@ -337,11 +387,12 @@ DrawFrame   proc
             mov si, VIDEOSEG
             mov es, si           ; es == 0B800h
 
-            mov si, word ptr FrameType
+            mov si, word ptr cs:FrameType
             shl si, 3
-            add si, word ptr FrameType    
+            add si, word ptr cs:FrameType    
                                  ; si == SGNTNLLEN * FrameType   
-            lea si, FRAMES[si]   ; si == address of the Frame Symbols
+            lea si, cs:FRAMES[si]   
+                                 ; si == address of the Frame Symbols
 
             mov ah, COLOR_ATTR   ; ah == color attribute
             mov di, (StartLine * FRAME_LEN + StartColm) * 2
@@ -422,4 +473,4 @@ FRAME_TEXT  db (LEN - 2) dup (?)
 
 ;====================THE=END=====================
 
-end Start
+;end Start

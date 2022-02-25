@@ -1,6 +1,6 @@
-.model tiny
-.code
-org 100h
+;.model tiny
+;.code
+;org 100h
 
 ;=============STRING=FUNCTION=LIB================
 ;
@@ -41,24 +41,22 @@ org 100h
 ;
 ;================================================
 
-Start:      mov di, ds
-            mov es, di
+;Start:      lea di, NUMBER
+            ;mov cl, 4
+            ;mov dx, 0Fh 
+            ;mov ax, 0B1Fh
 
-            lea si, FSTSTR
-            lea di, SNDSTR
-            mov cx, 4d
+            ;call rnumtoa2
 
-            call rstrncmp
+            ;Terminate:
+            ;mov ah, STOP
+            ;int 21h
 
-            Terminate:
-            mov ah, STOP
-            int 21h
-
-NULSTR db 0
-NUMSTR db '    +102', 0
-FSTSTR db 'hello', 0
-SNDSTR db 'hello world', 0
-NUMBER db 20 dup (1)
+;NULSTR db 0
+;NUMSTR db '    +102', 0
+;FSTSTR db 'hello', 0
+;SNDSTR db 'hello world', 0
+;NUMBER db 20 dup (1)
 
 ;-------------------RSTRLEN-----------------------
 ; 
@@ -514,12 +512,6 @@ ratoi   endp
 ; Note: sets DF to zero
 ;------------------------------------------------
 
-SPACE equ 020h
-MINUS equ 02Dh
-PLUS  equ 02Bh
-
-;------------------------------------------------
-
 satoi   proc
 
         push bp                 ; prologue 
@@ -624,47 +616,51 @@ SSYMB_TABLE db '0123456789ABCDEF'
 ; Description: optimized version of 'rnumtoa'
 ;              function, used for numeric systems
 ;              with base 2^n, n = 1, 2, 3 or 4
-; Entry:       DS - points to the segment, where
+; Entry:       ES - points to the segment, where
 ;                   string will be stored
-;              SI - points to the first symbol 
+;              DI - points to the first symbol 
 ;                   in this string
 ;              AX - number to be translated
 ;              CL - n
 ;              DX - mask
-; Exit:        SI - remains it value
-; Destr:       BX, AX
+; Exit:        DI - remains it value
+; Additional exit: SI - number of symbols in 
+;                       result string
+; Destr:       BX, AX, SI 
 ;------------------------------------------------
 
 rnumtoa2    proc
 
             mov bx, ax
+            mov si, 1           ; additional  counter
 
         rnumtoa2Count:          ; count shift in string
             shr bx, cl
             cmp bx, 0
             je  rnumtoa2Loop    ; stop if bx == 0 
 
-            inc si              
-            jmp rnumtoa2Count
+            inc di              ; move si to next symbol
+            inc si              ; incfrement additional counter
+            jmp rnumtoa2Count   ; repeat while bx != 0
 
         rnumtoa2Loop:           ; main cycle
             mov bx, ax 
             and bx, dx          ; using mask
 
-            mov bl, [bx + offset XlatTable]                 ; include 
-            mov ds:[si], bl
-            dec si
+            mov bl, [bx + offset XlatTable]           
+            mov es:[di], bl     ; store translated code of the symbol
+            dec di              ; move to next symbol in string
 
-            shr ax, cl          
-            cmp ax, 0
-            jne rnumtoa2Loop
+            shr ax, cl          ; ax := 2^base
+            cmp ax, 0           
+            jne rnumtoa2Loop    ; repeat while ax != 0
 
-            inc si              ; si points to the start
+            inc di              ; si points to the start
             ret
 
 rnumtoa2    endp
 
-XlatTable db '0123456789ABCDEF'
+XlatTable db '0123456789ABCDEF' ; translation table
 
 ;-----------------SNUMTOA2-----------------------
 ;
@@ -672,7 +668,7 @@ XlatTable db '0123456789ABCDEF'
 ;              function, used for numeric systems
 ;              with base 2^n, n = 1, 2, 3 or 4
 ; Entry:       first  - points to the segment, 
-;                      where string will be stored
+;                       where string will be stored
 ;              second - points to the first 
 ;                       symbol in this string
 ;              third  - number to be translated
@@ -703,12 +699,12 @@ snumtoa2    endp
 
 ;================================================
 
-;--------------INTERRUPTION-CODES----------------
+;-----------INT-21h-FUNCION-CODES----------------
 
 PUTS		equ 09h	    	; printing line	
 STOP		equ 04Ch    	; terminating
 ;------------------------------------------------
 
-end Start
+;end Start
 
 
