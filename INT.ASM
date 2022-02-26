@@ -108,12 +108,22 @@ New08       proc
             push si di bp
             push es ds                  ; saving registers values 
 
+        DEBUG:
             cld
             call LoadRegs               ; saving reg names and values in array
+            call SaveVidMem             ; save video memory
 
-            ;call SaveVidMem            ; save video memory
             call DrawRegFrame           ; draw frame with registers
-            ;call RestoreVidMem         ; restore video memory
+
+            push cx 
+            mov cx, 0FFFFh
+        DelayLoop:
+            nop
+
+            loop DelayLoop
+            pop cx
+
+            call RestoreVidMem         ; restore video memory
 
             pop ds es         
             pop bp di si 
@@ -242,7 +252,7 @@ SaveVidMem  proc
 
             ;
             push cs
-            pop es
+            pop  es
             ;
 
             lea di, SavedVidMem         ; di -> array for saving
@@ -253,7 +263,8 @@ SaveVidMem  proc
             mov cx, LEN                 ; local counter
             rep movsw                   ; move one line
 
-            add si, FRAME_LEN - LEN     ; si -> start of the next line
+            add si, (FRAME_LEN - LEN) * 2 
+                                        ; si -> start of the next line
 
             dec bx                      ; decrement counter
             cmp bx, 0                   
@@ -292,7 +303,8 @@ RestoreVidMem   proc
                 mov cx, LEN             ; local counter
                 rep movsw               ; move one line
 
-                add di, FRAME_LEN - LEN ; di -> start of the next line
+                add di, (FRAME_LEN - LEN) * 2 
+                                        ; di -> start of the next line
 
                 dec bx                  ; decrement global counter
                 cmp bx, 0
