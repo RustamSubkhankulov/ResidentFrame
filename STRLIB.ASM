@@ -624,24 +624,24 @@ SSYMB_TABLE db '0123456789ABCDEF'
 ;              CL - n
 ;              DX - mask
 ; Exit:        DI - remains it value
-; Additional exit: SI - number of symbols in 
-;                       result string
-; Destr:       BX, AX, SI 
+; Destr:       AX, SI, BX
 ;------------------------------------------------
 
 rnumtoa2    proc
 
             mov bx, ax
-            mov si, 1           ; additional  counter
+            add di, 3
 
-        rnumtoa2Count:          ; count shift in string
-            shr bx, cl
-            cmp bx, 0
-            je  rnumtoa2Loop    ; stop if bx == 0 
+        ;rnumtoa2Count:          ; count shift in string
+            ;shr bx, cl
+            ;cmp bx, 0
+            ;je  rnumtoa2Loop    ; stop if bx == 0 
 
-            inc di              ; move si to next symbol
-            inc si              ; incfrement additional counter
-            jmp rnumtoa2Count   ; repeat while bx != 0
+            ;inc di              ; move si to next symbol
+            ;inc si              ; incfrement additional counter
+            ;jmp rnumtoa2Count   ; repeat while bx != 0
+
+            mov si, 4           ; counter of symbols
 
         rnumtoa2Loop:           ; main cycle
             mov bx, ax 
@@ -652,10 +652,13 @@ rnumtoa2    proc
             dec di              ; move to next symbol in string
 
             shr ax, cl          ; ax := 2^base
-            cmp ax, 0           
-            jne rnumtoa2Loop    ; repeat while ax != 0
+            ;cmp ax, 0           
 
-            inc di              ; si points to the start
+            dec si              ; decrement 'si' counter
+            cmp si, 0            
+            jne rnumtoa2Loop    ; repeat while si != 0
+
+            inc di              ; di points to the start
             ret
 
 rnumtoa2    endp

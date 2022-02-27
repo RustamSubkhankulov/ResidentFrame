@@ -18,6 +18,10 @@ org 100h
 
 Start:      ;cld                         ; DF = 0
 
+            ;
+            ;jmp DEBUG
+            ;
+
             mov al, 08h                 ; int 08h
             lea di, Old08               
             lea dx, New08
@@ -99,9 +103,24 @@ ChngIntHandler  endp
 
 New08       proc                        ; at the start of int in stack are pushed FLAGS, CS, IP
 
-            push ax bx cx dx                                                         ; array in stack (args)
-            push si di bp sp
-            push es ds ss               ; saving registers values 
+
+            ;
+            ;DEBUG:
+            ;
+
+            ;
+            ;pushf 
+            ;push cs 
+            ;push cs
+            ;
+
+            push es ss ds  
+            push sp bp di si
+            push dx cx bx ax 
+
+            ;
+            ;jmp DRAWDEBUG
+            ;
 
             cmp cs:IsTurnOn, 1
             jne TurnedOff               ; if IsTurnOn == 0 jmp to TurnedOff
@@ -118,20 +137,32 @@ New08       proc                        ; at the start of int in stack are pushe
                                         ; and draw it 
             call SaveVidMem             ; save video memory behind frame
 
+            ;
+            ;DRAWDEBUG:
+            ;
+
         Draw:
             cld
             call LoadRegs               ; saving reg names and values in array
+
+            mov si, VIDEOSEG
+            mov es, si                  ; es = 0B800h
+
             call DrawRegFrame           ; draw frame with registers
-            jmp ToOrigHandler
+            jmp  ToOrigHandler
 
         TurnOffFrame:
             mov cs:IsTurnOn, 0          ; turn on frame
             call RestoreVidMem          ; restore video memory behind frame
 
         ToOrigHandler:
-            pop ds es         
-            pop bp di si 
-            pop dx cx bx ax             ; restore registers values  
+            ;pop ds es         
+            ;pop bp di si 
+            ;pop dx cx bx ax             ; restore registers values  
+
+            pop ax bx cx dx
+            pop si di bp sp
+            pop ds ss es
 
 Jump08:     db 0EAh
 Old08:      dd 0h
@@ -147,13 +178,17 @@ New08       endp
 ; Entry: None
 ;        Expects DF == 0 
 ; Exit:  Saved names and values in array
-; Destr: ES, BP, DI, DX
+; Destr: ES, BP, DI, DX, SI, BX, DS
 ;------------------------------------------------
 
 LoadRegs    proc 
 
-            push sp bp di si dx cx bx ax 
+            push bp
+            mov  bp, sp
+
+            ;push sp bp di si dx cx bx ax 
                                         ; save reg values
+            mov si, 4                   ; counter for arguments 
 
             push cs 
             pop  es                     ; es == cs 
@@ -162,23 +197,27 @@ LoadRegs    proc
             pop  ds                     ; ds == cs for proper 
                                         ; addressing
 
-            lea bp, RegNames            ; bp -> registers names 
+            lea bx, RegNames            ; bx -> registers names 
             lea di, SavedRegVal         ; di -> array for saved reg values
             mov dx, 0Fh                 ; mask for 16-base numeric
                                         ; system
             mov cl, 4                   ; 16 = 2 ^ 4
 
-            mov ch, 8d                  ; counter = number of registers
+            mov ch, 14d                 ; counter = number of registers
 
         LoadLoop:
-            mov ax, cs:[bp]             ; ax == name of the reg
+            mov ax, cs:[bx]             ; ax == name of the reg
             stosw                       ; di += 2;
-            add bp, 2                   ; move bp to next name
+            add bx, 2                   ; move si to next name
 
-            add di, 2                   ; skip two spaces 
+            add di, 3                   ; skip three spaces 
 
-            pop ax                      ; get saved reg value from stack
+            mov ax, ss:[bp + si]        ; get saved reg value from stack
+            add si, 2                   ; si -> next arg
+
+            push si bx                  ; save si and bx values
             call rnumtoa2               ; write value in array as a string
+            pop  bx si                  ; restore si and bx values 
 
             add di, 4                   ; move di to position for next iteration
 
@@ -186,31 +225,33 @@ LoadRegs    proc
             cmp ch, 0               
             jne LoadLoop                ; repeat if counter != 0
 
+            pop bp 
             ret 
 
 LoadRegs    endp
 
-RegNames    db "AX","BX","CX","DX","SI","DI","BP","SP"
+RegNames    db "AX","BX","CX","DX","SI","DI","BP","SP","DS","SS","ES","IP","CS","FL"
 
 ;-----------------DrawRegFrame-------------------
 ;
 ; Descr: used by our new INT 08h hadnlew to draw
 ;        frame with registers values in it
-; Entry: None
+; Entry: ES -> segment, where frame will be 
+;              drawn
 ; Exit : None
-; Destr:
+; Destr: SI, DI, CX, BX, DS=CS, AL
 ;------------------------------------------------
 
 DrawRegFrame    proc
 
                 mov byte ptr cs:FrameType, 2d              
                                         ; frame type
-                mov si, 0B800h
-                mov es, si              ; es -> VIDEO SEGMENT
+                ;mov si, 0B800h
+                ;mov es, si              ; es -> VIDEO SEGMENT
                 call DrawFrame          ; draw empty frame
 
                 lea si, RegFrameTitle   ; title of frame
-                mov cx, 9d              ; lenght of title
+                mov cx, 10d             ; lenght of title
                 mov bx, 1d              ; write on first line 
                 call WriteTextStr       ; write title in frame
 
@@ -221,19 +262,39 @@ DrawRegFrame    proc
                 push cs
                 pop ds 
 
+                ;mov ah, COLOR_ATTR      ; color attribute
+
             WriteRegLoop:
-                mov cx, 8d              ; write 8 symbols
                 mov bx, dx              ; number of the line
+
+                cmp bx, 11d             ; if number of string == 12
+                je HorLine              ; draw horizontal line
+
+                cmp bx, 17d             ; same with 18th line
+                je HorLine
+
+                mov cx, 9d              ; write 9 symbols
                 call WriteTextStr       ; on the particular line
 
                 inc dx                  ; move to next line 
-                cmp dx, 11d             ; stop after 8 lines
+                cmp dx, 19d             ; stop after 8 lines
                 jne WriteRegLoop        ; else repeat 
 
+                jmp DrawRegFrameRet
+
+            HorLine:
+                push si                 ; save si value 
+                call DrawHorLine       ; draw horizontal line
+                inc  dx                 ; increment counter of lines
+                pop  si                 ; restore si value
+
+                jmp WriteRegLoop        ; return to the cycle 
+
+            DrawRegFrameRet:
                 ret 
 DrawRegFrame    endp 
 
-RegFrameTitle   db "REGISTERS"
+RegFrameTitle   db " REGISTERS"
 
 ;------------------SaveVidMem--------------------
 ;
@@ -331,6 +392,12 @@ RestoreVidMem   endp
 ; Destr:
 ;------------------------------------------------
 
+FillBackBuf     proc
+
+                
+
+                ret 
+FillBackBuf     endp
 
 ;---------------------New09----------------------
 ;
@@ -395,13 +462,13 @@ LstScnCode  db 0                        ; Last scanned code
 SavedVidMem db (LEN * WID * 2) dup (20h); array where saved vid 
                                         ; memory will be saved
 
-SavedRegVal db (8 * (4 + 4)) dup (20h)  ; 8 registers, 2 bytes for name
-                                        ; 2 sapces and 4 bytes for value 
+SavedRegVal db (14 * (5 + 4)) dup (20h)  ; 14 registers, 2 bytes for name
+                                         ; 2 spaces and 4 bytes for value 
 
-Align       db (offset $ $ 0Fh) dup (1d)
+;Alignment   db ((offset $) & 0Fh) dup (1d)
                                         ; alignment by 16
 
-BackBuffer  db (FRAME_LEN * FRAME_WID) * 2 dup (2d)
+;BackBuffer  db (FRAME_LEN * FRAME_WID) * 2 dup (2d)
                                         ; array size of video frame
 
 ;------------------------------------------------

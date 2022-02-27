@@ -72,7 +72,7 @@ STOP		equ 04Ch    	; interrupt code for terminating
 
 ;--------------FRAME-PARAMETERS------------------
 
-WID	    	= 12d		    ; width  of the frame
+WID	    	= 20d		    ; width  of the frame
 LEN		    = 13d		    ; lenght of the frame
 COLOR_ATTR  = 4Eh           ; color attribute for the frame
                             ;
@@ -115,6 +115,47 @@ SPACE	 	= 020h		    ; space symbol
 ;=============FUNCTIONS DEFINITIONS==============
 
 locals RT
+
+;--------------DrawHorLine-----------------------
+;
+; Descr: draw horizontal line in frame on 
+;        particular line
+;
+; Entry: ES -> segment, where frame printed
+;        AH - color attribute
+;        BX - number of line 
+;        cs:FrameType - type of the frame (0 - 2)
+;                       (function cannot be used 
+;                        with users style of frame)
+; Exit:  NONE
+; Desrt: AL, SI, DI, BX, CX
+;------------------------------------------------
+
+DrawHorLine     proc
+
+                mov di, (StartLine * FRAME_LEN + StartColm)
+                                        ; di == start position of text
+
+                shl bx, 4
+                add di, bx 
+                shl bx, 2
+                add di, bx              ; add offset to the string
+
+                shl di, 1               ; di *= 2
+
+                mov si, word ptr cs:FrameType 
+                shl si, 1
+                add si, word ptr cs:FrameType    
+                                        ; si = type * 3
+
+                lea si, cs:HOR_LINES[si]
+                                        ; get offset to the symbols
+                mov cx, LEN             ; lenght of the frame
+
+                call DrawLine 
+
+                ret 
+DrawHorLine     endp
 
 ;--------------WriteTextStr----------------------
 ;
@@ -466,6 +507,14 @@ UserFrame:
 USER_FST    db 3 dup(?)
 USER_MDL    db 3 dup(?)
 USER_LST    db 3 dup(?)
+
+;-----------------HORIZONTAL-LINES---------------
+
+HOR_LINES:
+
+SIGN_LINE   db 195d, '-' , 180d
+SG_LINE     db 195d, 196d, 180d
+DB_LINE     db 204d, 205d, 185d
 
 ;----------------IN-FRAME-TEXT-ARRAY-------------
 
