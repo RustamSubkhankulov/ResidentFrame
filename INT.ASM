@@ -16,9 +16,7 @@ org 100h
 ;
 ;==================MAIN=BODY=====================
 
-Start:      cld                         ; DF = 0
-
-            ;jmp DEBUG
+Start:      ;cld                         ; DF = 0
 
             mov al, 08h                 ; int 08h
             lea di, Old08               
@@ -99,32 +97,38 @@ ChngIntHandler  endp
 ; Destr:
 ;------------------------------------------------
 
-New08       proc            
+New08       proc                        ; at the start of int in stack are pushed FLAGS, CS, IP
 
-            cmp cs:IsTurnOn, 1          ; if drawing frame turned off
-            jne Jump08                  ; jmp to original int handler
+            push ax bx cx dx                                                         ; array in stack (args)
+            push si di bp sp
+            push es ds ss               ; saving registers values 
 
-            push ax bx cx dx 
-            push si di bp
-            push es ds                  ; saving registers values 
+            cmp cs:IsTurnOn, 1
+            jne TurnedOff               ; if IsTurnOn == 0 jmp to TurnedOff
 
-        DEBUG:
+            cmp cs:LstScnCode, 3Ch      ; else cmp last scan code and F2
+            je TurnOffFrame             ; if last scan code == F2 turn off frame and restore vid mem
+            jmp Draw                    ; else draw frame
+
+        TurnedOff:
+            cmp cs:LstScnCode, 3Bh      ; if last scan code != F1 and frame turned off
+            jne ToOrigHandler           ; jmp to orig handler
+
+            mov cs:IsTurnOn, 1          ; else turn on frame
+                                        ; and draw it 
+            call SaveVidMem             ; save video memory behind frame
+
+        Draw:
             cld
             call LoadRegs               ; saving reg names and values in array
-            call SaveVidMem             ; save video memory
-
             call DrawRegFrame           ; draw frame with registers
+            jmp ToOrigHandler
 
-            push cx 
-            mov cx, 0FFFFh
-        DelayLoop:
-            nop
+        TurnOffFrame:
+            mov cs:IsTurnOn, 0          ; turn on frame
+            call RestoreVidMem          ; restore video memory behind frame
 
-            loop DelayLoop
-            pop cx
-
-            call RestoreVidMem         ; restore video memory
-
+        ToOrigHandler:
             pop ds es         
             pop bp di si 
             pop dx cx bx ax             ; restore registers values  
@@ -201,6 +205,8 @@ DrawRegFrame    proc
 
                 mov byte ptr cs:FrameType, 2d              
                                         ; frame type
+                mov si, 0B800h
+                mov es, si              ; es -> VIDEO SEGMENT
                 call DrawFrame          ; draw empty frame
 
                 lea si, RegFrameTitle   ; title of frame
@@ -314,6 +320,18 @@ RestoreVidMem   proc
 
 RestoreVidMem   endp
 
+;------------------FillBackBuf-------------------
+;
+; Draws frame in ' BackBuf' array, that simulates 
+; video memory by its  size
+;
+; Descr:
+; Entry: None
+; Exit : None
+; Destr:
+;------------------------------------------------
+
+
 ;---------------------New09----------------------
 ;
 ; Descr: New int 09h interrupt handler
@@ -338,16 +356,14 @@ New09       proc
             cmp al, 3Ch                 ; is F2 pressed?
             jne ShortCut09              ; if it is not,
                                         ; jmp to original handler
-            mov cs:IsTurnOn, 0          ; else turn off frame
-            jmp IntEnding               ; and jmp to ending
+            jmp IntEnding               ; else jmp to our ending
 
         IsNotTurnOn:                    
             cmp al, 03Bh                ; is F1 pressed?
             jne ShortCut09              ; if it is not,
                                         ; jmp to original handler
-            mov cs:IsTurnOn, 1          ; else turn on
 
-        IntEnding:
+        IntEnding:                      ; else 
             in  al, 61h                 ; blink to the 61h port 
             mov ah, al
             or  al, 80h 
@@ -382,8 +398,17 @@ SavedVidMem db (LEN * WID * 2) dup (20h); array where saved vid
 SavedRegVal db (8 * (4 + 4)) dup (20h)  ; 8 registers, 2 bytes for name
                                         ; 2 sapces and 4 bytes for value 
 
+Align       db (offset $ $ 0Fh) dup (1d)
+                                        ; alignment by 16
+
+BackBuffer  db (FRAME_LEN * FRAME_WID) * 2 dup (2d)
+                                        ; array size of video frame
+
 ;------------------------------------------------
 
 ProgEnd:                                ; Used for TSR (see 'TermNstay')
 
-end Start                               
+end Start                 
+
+
+                                        ; 
