@@ -118,8 +118,10 @@ New08       proc                        ; at the start of int in stack are pushe
             push sp bp di si
             push dx cx bx ax 
 
+            cld 
+
             ;
-            ;jmp DRAWDEBUG
+            ;jmp DEB1
             ;
 
             cmp cs:IsTurnOn, 1
@@ -127,7 +129,7 @@ New08       proc                        ; at the start of int in stack are pushe
 
             cmp cs:LstScnCode, 3Ch      ; else cmp last scan code and F2
             je TurnOffFrame             ; if last scan code == F2 turn off frame and restore vid mem
-            jmp Draw                    ; else draw frame
+            jmp TurnedOn                ; else draw frame
 
         TurnedOff:
             cmp cs:LstScnCode, 3Bh      ; if last scan code != F1 and frame turned off
@@ -135,16 +137,26 @@ New08       proc                        ; at the start of int in stack are pushe
 
             mov cs:IsTurnOn, 1          ; else turn on frame
                                         ; and draw it 
-            call SaveVidMem             ; save video memory behind frame
 
             ;
-            ;DRAWDEBUG:
+            ;DEB1:
             ;
 
-        Draw:
-            cld
+            call LoadRegs               ; load reg values from stack to specialized array
+
+            call FillBackBuf            ; draw frame in BackBuf
+            call FillSaveBuf            ; load vid memory to SaveBuf
+
+            jmp DrawRegistersFrame      ; jmp to drawing frame
+
+
+        TurnedOn:
             call LoadRegs               ; saving reg names and values in array
 
+            call FillSaveBuf            ; update SaveBuf
+            call FillBackBuf            ; update BackBuf
+
+        DrawRegistersFrame:
             mov si, VIDEOSEG
             mov es, si                  ; es = 0B800h
 
@@ -156,10 +168,6 @@ New08       proc                        ; at the start of int in stack are pushe
             call RestoreVidMem          ; restore video memory behind frame
 
         ToOrigHandler:
-            ;pop ds es         
-            ;pop bp di si 
-            ;pop dx cx bx ax             ; restore registers values  
-
             pop ax bx cx dx
             pop si di bp sp
             pop ds ss es
@@ -244,6 +252,9 @@ RegNames    db "AX","BX","CX","DX","SI","DI","BP","SP","DS","SS","ES","IP","CS",
 
 DrawRegFrame    proc
 
+                push cs
+                pop ds                  ; ds == cs for addressing
+
                 mov byte ptr cs:FrameType, 2d              
                                         ; frame type
                 ;mov si, 0B800h
@@ -258,9 +269,6 @@ DrawRegFrame    proc
                 lea si, SavedRegVal     ; address of the array with saved
                                         ; registers values
                 mov dx, 3d              ; start from the third line
-
-                push cs
-                pop ds 
 
                 ;mov ah, COLOR_ATTR      ; color attribute
 
@@ -322,7 +330,7 @@ SaveVidMem  proc
             pop  es
             ;
 
-            lea di, SavedVidMem         ; di -> array for saving
+            lea di, SaveBuf         ; di -> array for saving
 
             mov bx, WID                 ; global counter
 
@@ -356,7 +364,7 @@ RestoreVidMem   proc
                 mov si, VIDEOSEG
                 mov es, si              ; es -> video segment
 
-                lea si, SavedVidMem     ; array with saved data
+                lea si, SaveBuf         ; array with saved data
                 mov di, (StartLine * FRAME_LEN + StartColm) * 2
                                         ; di -> start of the frame 
                 ;
@@ -389,15 +397,67 @@ RestoreVidMem   endp
 ; Descr:
 ; Entry: None
 ; Exit : None
-; Destr:
+; Destr: 
 ;------------------------------------------------
 
 FillBackBuf     proc
 
-                
+                mov si, cs:BackBufSeg
+                mov es, si              ; get value from variable
+
+                call DrawRegFrame
 
                 ret 
 FillBackBuf     endp
+
+;-------------------FillSaveBuf------------------
+;
+; Descr:
+; Entry:
+; Exit:
+; Destr: DS=VidSes, ES=SaveBufSeg, DI, SI, AX, BX
+;------------------------------------------------
+
+FillSaveBuf     proc
+
+                mov si, VIDEOSEG
+                mov ds, si              ; ds -> VIDEO SEG
+                xor si, si              ; si -> start
+
+                mov di, cs:BackBufSeg
+                mov es, di              ; es -> BackBufsegment
+
+                mov di, offset SaveBuf
+                                        ; cs:[di] -> SaveBuf
+
+                mov bx, WID             ; global counter
+
+            FillSaveBufCycle:
+                mov cx, LEN             ; local counter
+
+            SaveBufLineLoop:
+                mov ax, ds:[si]         ; get word from videomem
+
+                cmp ax, es:[si]         ; cmp with BackBuf
+                je  NextIter            ; if video = back -> next iter
+                mov cs:[di], ax         ; else save video to SaveBuf
+
+            NextIter:
+                add si, 2               
+                add di, 2               ; to next word
+                loop SaveBufLineLoop    ; repeat CX times
+
+                dec bx                  ; decrement global counter
+                cmp bx, 0               ; if bx == 0 stop 
+                je FillSaveBufRet
+
+                add si, (FRAME_LEN - LEN) * 2 
+                                        ; move to next line
+                jmp FillSaveBufCycle    ; and repeat cycle
+
+            FillSaveBufRet:
+                ret
+FillSaveBuf     endp
 
 ;---------------------New09----------------------
 ;
@@ -457,19 +517,17 @@ New09       endp
 IsTurnOn    db 0                        ; SwitchOn\Off variable
 LstScnCode  db 0                        ; Last scanned code 
 
+;BackBufSeg  dw 0b800h + (80d * 25d *2d) / 16d
+BackBufSeg  dw 0B8FAh                    
+                                        ; segment of BackBuf
+
 ;------------------------------------------------
 
-SavedVidMem db (LEN * WID * 2) dup (20h); array where saved vid 
+SaveBuf db (LEN * WID * 2) dup (1h)    ; array where saved vid 
                                         ; memory will be saved
 
 SavedRegVal db (14 * (5 + 4)) dup (20h)  ; 14 registers, 2 bytes for name
                                          ; 2 spaces and 4 bytes for value 
-
-;Alignment   db ((offset $) & 0Fh) dup (1d)
-                                        ; alignment by 16
-
-;BackBuffer  db (FRAME_LEN * FRAME_WID) * 2 dup (2d)
-                                        ; array size of video frame
 
 ;------------------------------------------------
 
@@ -478,4 +536,4 @@ ProgEnd:                                ; Used for TSR (see 'TermNstay')
 end Start                 
 
 
-                                        ; 
+
