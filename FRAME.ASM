@@ -377,16 +377,16 @@ DrwLnErrMsg     db 'Incorrect lenght of the frame$'
 ;
 ; DrawFrame
 ;
-; Entry: None
+; Entry: ES -> segment, where frame will be drawn
 ; Exit : None
 ; Destr: AL, BX, CX, DI, SI
 ;------------------------------------------------
 
 DrawFrame   proc 
 
-            mov si, VIDEOSEG
-            mov es, si           ; es == 0B800h
-
+            ;mov si, VIDEOSEG                            ; ES as parameter 
+            ;mov es, si           ; es == 0B800h         ; offset / 16 + ds 
+                                                        ; db offset $ OFh dup 
             mov si, word ptr cs:FrameType
             shl si, 3
             add si, word ptr cs:FrameType    
