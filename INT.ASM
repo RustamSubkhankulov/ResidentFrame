@@ -139,6 +139,7 @@ New08       proc                        ; at the start of int in stack are pushe
                                         ; and draw it 
 
             ;
+            ;
             ;DEB1:
             ;
 
@@ -257,8 +258,7 @@ DrawRegFrame    proc
 
                 mov byte ptr cs:FrameType, 2d              
                                         ; frame type
-                ;mov si, 0B800h
-                ;mov es, si              ; es -> VIDEO SEGMENT
+                                        
                 call DrawFrame          ; draw empty frame
 
                 lea si, RegFrameTitle   ; title of frame
