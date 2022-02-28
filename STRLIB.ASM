@@ -640,7 +640,7 @@ rnumtoa2    proc
             ;inc di              ; move si to next symbol
             ;inc si              ; incfrement additional counter
             ;jmp rnumtoa2Count   ; repeat while bx != 0
-
+ 
             mov si, 4           ; counter of symbols
 
         rnumtoa2Loop:           ; main cycle

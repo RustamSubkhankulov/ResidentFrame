@@ -212,9 +212,11 @@ LoadRegs    proc
                                         ; system
             mov cl, 4                   ; 16 = 2 ^ 4
 
-            mov ch, 14d                 ; counter = number of registers
+            mov ch, 13d                 ; counter = number of registers
 
         LoadLoop:
+            inc di                      ; skip one space 
+
             mov ax, cs:[bx]             ; ax == name of the reg
             stosw                       ; di += 2;
             add bx, 2                   ; move si to next name
@@ -228,18 +230,76 @@ LoadRegs    proc
             call rnumtoa2               ; write value in array as a string
             pop  bx si                  ; restore si and bx values 
 
-            add di, 4                   ; move di to position for next iteration
+            add di, 5                   ; move di to position for next iteration
 
             dec ch                      ; decrement counter
             cmp ch, 0               
             jne LoadLoop                ; repeat if counter != 0
+
+            mov ax, ss:[bp + si]        ; get flags values as word
+            call WriteFlags             ; write flag values in array
 
             pop bp 
             ret 
 
 LoadRegs    endp
 
-RegNames    db "AX","BX","CX","DX","SI","DI","BP","SP","DS","SS","ES","IP","CS","FL"
+RegNames    db "AX","BX","CX","DX","SI","DI","BP","SP","DS","SS","ES","IP","CS"
+
+;-----------------WriteFlags---------------------
+;
+; Descr: converts word from stack into flag 
+;        values and writes it in array
+; Entry: AX - flags as word from stack after PUSHF
+;        DI -> line of frame, where flag values
+;              will be printer (position in array)
+;        DS == CS, ES == CS
+; Exit : None
+; Destr: DI, CX, SI, DX, BX
+;------------------------------------------------
+
+WriteFlags      proc
+
+                mov si, offset FlagsTitle
+                                        ; si->Title of the line
+                mov cx, cs:FlagsTitleSize
+                                        ; size of the title
+                rep movsb               ; write title in array
+                                        ; di += 3
+
+                mov dx, 8               ; counter - number of flags
+                mov si, 0               ; counter for masks
+                                
+            RegWriteLoop:
+                mov bx, ax              ; get value of flags as word
+                mov cx, cs:FlagOffs[si] ; get offset to bit
+                inc si                  ; move to next flag
+                shr bx, cl              ; move bit to the right
+                and bx, 1               ; get value
+
+                add bx, '0'             ; convert into symbol
+                mov cs:[di], bx         ; store in array
+                inc di                  ; move to next pos
+
+                dec dx                  ; decrement counter
+                cmp dx, 0           
+                jne RegWriteLoop        ; repeat while counter != 0
+                                        ; di += 8
+                mov si, offset FlagNames
+                mov cx, FlagNamesSize   ; get address and size of FlagNames string
+
+                rep movsb               ; di += 11
+                ret 
+WriteFlags      endp
+
+;                  CF   PF   AF   ZF   SF   IF    DF    OF      ; names 
+FlagOffs        dw 0d,  2d,  4d,  6d,  7d,  9d,   10d,  11d     ; offset to move flag to right
+
+FlagNames       db "NM:CPAZSIDO"                                ; names of flags
+FlagNamesSize   dw 11d                                          ; lenght 
+
+FlagsTitle      db "FL:"                                        ; title of line with flags
+FlagsTitleSize  dw 3d                                           ; lenght
 
 ;-----------------DrawRegFrame-------------------
 ;
@@ -270,22 +330,20 @@ DrawRegFrame    proc
                                         ; registers values
                 mov dx, 3d              ; start from the third line
 
-                ;mov ah, COLOR_ATTR      ; color attribute
-
             WriteRegLoop:
                 mov bx, dx              ; number of the line
 
-                cmp bx, 11d             ; if number of string == 12
+                cmp bx, 11d             ; if number of string == 11
                 je HorLine              ; draw horizontal line
 
-                cmp bx, 17d             ; same with 18th line
+                cmp bx, 17d             ; same with 17th line
                 je HorLine
 
-                mov cx, 9d              ; write 9 symbols
+                mov cx, 11d              ; write 9 symbols
                 call WriteTextStr       ; on the particular line
 
                 inc dx                  ; move to next line 
-                cmp dx, 19d             ; stop after 8 lines
+                cmp dx, 20d             ; stop after 8 lines
                 jne WriteRegLoop        ; else repeat 
 
                 jmp DrawRegFrameRet
@@ -422,7 +480,9 @@ FillSaveBuf     proc
 
                 mov si, VIDEOSEG
                 mov ds, si              ; ds -> VIDEO SEG
-                xor si, si              ; si -> start
+                ;xor si, si              ; si -> start
+                mov si, (StartLine * FRAME_LEN + StartColm) * 2
+
 
                 mov di, cs:BackBufSeg
                 mov es, di              ; es -> BackBufsegment
@@ -524,10 +584,11 @@ BackBufSeg  dw 0B8FAh
 ;------------------------------------------------
 
 SaveBuf db (LEN * WID * 2) dup (1h)    ; array where saved vid 
-                                        ; memory will be saved
+                                       ; memory will be saved
 
-SavedRegVal db (14 * (5 + 4)) dup (20h)  ; 14 registers, 2 bytes for name
-                                         ; 2 spaces and 4 bytes for value 
+SavedRegVal db (14 * 11 + 2 * 11) dup (20h)  ; 14 registers, 2 bytes for name
+                                                  ; 2 spaces and 4 bytes for value 
+                                                  ; plus two lines each 11 bytes for flags
 
 ;------------------------------------------------
 

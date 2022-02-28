@@ -57,7 +57,7 @@ FRAME_LEN   = 80            ; lenght of the video frame
 FRAME_WID   = 25            ; width  of the video frame
 
 StartLine   = 0             ; first line   of the frame
-StartColm   = 0            ; first column of the frame
+StartColm   = 67            ; first column of the frame
 
 ;CENTER_LINE = FRAME_WID / 2 ; center line   of the video frame
 ;CENTER_COLM = FRAME_LEN / 2 ; center column of the video frame
@@ -72,7 +72,7 @@ STOP		equ 04Ch    	; interrupt code for terminating
 
 ;--------------FRAME-PARAMETERS------------------
 
-WID	    	= 20d		    ; width  of the frame
+WID	    	= 21d		    ; width  of the frame
 LEN		    = 13d		    ; lenght of the frame
 COLOR_ATTR  = 4Eh           ; color attribute for the frame
                             ;
